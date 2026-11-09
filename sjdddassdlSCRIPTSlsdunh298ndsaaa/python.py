@@ -6,7 +6,7 @@ import re
 import shutil
 import time
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 RAW_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%2Cdrlhng580w7"
 VERSION_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/dUHBIy7bversiond4fonewui"
 SCRIPT_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/python.py"
@@ -84,11 +84,13 @@ def check_for_updates():
         shutil.copy(__file__, __file__ + ".bak")
         with open(__file__, "w", encoding="utf-8") as f:
             f.write(new_code)
-        print("  Скрипт обновлён! Перезапустите его.\n")
-        sys.exit(0)
+        print("  Скрипт обновлён! Перезапускаем...\n")
+        time.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         print(f"  [!] Не удалось записать файл: {e}")
         print("  Возможно, нет прав на запись в эту папку.")
+        print("  Закройте скрипт и запустите его снова вручную.")
 
 
 def download_and_decode():
