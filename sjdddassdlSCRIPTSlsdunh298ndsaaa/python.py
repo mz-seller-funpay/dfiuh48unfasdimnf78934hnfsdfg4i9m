@@ -3,12 +3,10 @@ import os
 import sys
 import urllib.request
 import re
-import shutil
 import time
 import subprocess
 from difflib import SequenceMatcher
 
-# --- Автоустановка pymorphy3 при первом запуске ---
 def ensure_pymorphy3():
     try:
         import pymorphy3  # noqa: F401
@@ -51,9 +49,9 @@ SYNONYMS = {
     "последний из нас": "last of us", "ласт оф ас": "last of us", "мафия": "mafia",
     "душа": "souls", "елден": "elden ring", "элден": "elden ring", "кольцо": "elden ring",
     "сталкер": "stalker", "метро": "metro", "фоллаут": "fallout", "фаллаут": "fallout",
-    "ассасин": "assassin", "крид": "creed", "фар край": "far cry", "фаркрай": "far cry",
+    "ассасин": "assassin", "крид": "creed",  "фар край": "far cry", "фаркрай": "far cry",
     "батлфилд": "battlefield", "колда": "call of duty", "кол оф дьюти": "call of duty",
-    "фифа": "fc", "фифа 25": "fc 25", "еа фк": "fc 25",
+    "фифа": "fc", "фифа 25": "fc 25", "stalker": "S.T.A.L.K.E.R", "еа фк": "fc 25",
     "форза": "forza", "хорайзон": "horizon", "зелда": "zelda", "марио": "mario",
     "сонс оф форест": "sons of the forest", "форест": "the forest", "лес": "the forest",
     "рафт": "raft", "портал": "portal", "майнкрафт": "minecraft",
@@ -134,7 +132,6 @@ def check_for_updates():
         return
 
     try:
-        shutil.copy(__file__, __file__ + ".bak")
         with open(__file__, "w", encoding="utf-8") as f:
             f.write(new_code)
         print("  Скрипт обновлён! Перезапускаем...\n")
