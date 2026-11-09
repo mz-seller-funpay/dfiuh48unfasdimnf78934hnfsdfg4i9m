@@ -8,33 +8,32 @@ import time
 import subprocess
 from difflib import SequenceMatcher
 
-# --- Автоустановка pymorphy2 при первом запуске ---
-def ensure_pymorphy2():
+# --- Автоустановка pymorphy3 при первом запуске ---
+def ensure_pymorphy3():
     try:
-        import pymorphy2  # noqa: F401
+        import pymorphy3  # noqa: F401
         return True
     except ImportError:
         pass
-    print("  Установка зависимости pymorphy2 (один раз)...")
+    print("  Установка зависимости pymorphy3 (один раз)...")
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet",
-             "pymorphy2", "pymorphy2-dicts-ru"],
+            [sys.executable, "-m", "pip", "install", "--quiet", "pymorphy3"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        import pymorphy2  # noqa: F401
+        import pymorphy3  # noqa: F401
         print("  Готово.")
         return True
     except Exception as e:
-        print(f"  [!] Не удалось установить pymorphy2: {e}")
+        print(f"  [!] Не удалось установить pymorphy3: {e}")
         print("  Продолжаем без нормализации русских слов.")
         return False
 
 
-HAS_MORPH = ensure_pymorphy2()
+HAS_MORPH = ensure_pymorphy3()
 if HAS_MORPH:
-    import pymorphy2
-    MORPH = pymorphy2.MorphAnalyzer()
+    import pymorphy3
+    MORPH = pymorphy3.MorphAnalyzer()
 else:
     MORPH = None
 
