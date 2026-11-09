@@ -48,7 +48,6 @@ check_for_updates() {
             echo "  [!] Скачанный файл не похож на скрипт. Обновление отменено."
             return
         fi
-        cp "$0" "$0.bak"
         mv "$tmp_file" "$0"
         chmod +x "$0"
         echo "  Скрипт обновлён! Перезапускаем..."
@@ -73,7 +72,6 @@ show_header() {
 
 get_synonym() {
     case "$1" in
-        # --- Базовые ---
         "ведьмак") echo "witcher" ;;
         "паук") echo "spider" ;;
         "гта"|"gta") echo "grand theft auto" ;;
@@ -92,7 +90,7 @@ get_synonym() {
         "мафия") echo "mafia" ;;
         "душа") echo "souls" ;;
         "елден"|"элден"|"кольцо") echo "elden ring" ;;
-        "сталкер") echo "stalker" ;;
+        "сталкер") echo "S.T.A.L.K.E.R" ;;
         "метро") echo "metro" ;;
         "фоллаут"|"фаллаут") echo "fallout" ;;
         "ассасин") echo "assassin" ;;
@@ -120,14 +118,12 @@ get_synonym() {
         "данганронпа"|"данга") echo "danganronpa" ;;
         "данганронпа 2") echo "danganronpa 2" ;;
         "данганронпа v3"|"данганронпа 3") echo "danganronpa v3" ;;
-        # --- Ведьмак ---
         "ведьмак 2") echo "witcher 2" ;;
         "ведьмак 1") echo "witcher" ;;
         "ведьмак 3 дикая охота") echo "witcher 3 wild hunt" ;;
         "гвинт") echo "gwent" ;;
         "киберпанк 2") echo "cyberpunk 2" ;;
         "ведьмак 4") echo "witcher 4" ;;
-        # --- Соулслайки ---
         "дарк соулс"|"дарк соулз"|"дс") echo "dark souls" ;;
         "дарк соулс 3"|"дс3") echo "dark souls 3" ;;
         "дарк соулс 2") echo "dark souls 2" ;;
@@ -139,7 +135,6 @@ get_synonym() {
         "нио 2") echo "nioh 2" ;;
         "лайс оф пи") echo "lies of p" ;;
         "лордс оф зе фоллен") echo "lords of the fallen" ;;
-        # --- GTA / Rockstar ---
         "гта 5"|"гта5"|"gta 5") echo "gta 5" ;;
         "гта 6"|"gta 6") echo "gta 6" ;;
         "гта 4") echo "gta 4" ;;
@@ -152,7 +147,6 @@ get_synonym() {
         "мафия 1"|"мафия дефинитив") echo "mafia definitive edition" ;;
         "буллы") echo "bully" ;;
         "ла нойр") echo "l.a. noire" ;;
-        # --- Bethesda ---
         "обливион") echo "oblivion" ;;
         "морровинд") echo "morrowind" ;;
         "фоллаут 4") echo "fallout 4" ;;
@@ -165,7 +159,6 @@ get_synonym() {
         "дум 3") echo "doom 3" ;;
         "квикс") echo "quake" ;;
         "вольфенштейн") echo "wolfenstein" ;;
-        # --- Ubisoft ---
         "ассасин крид") echo "assassin's creed" ;;
         "ассасин 2") echo "assassin's creed 2" ;;
         "ассасин 4"|"ассасин блэк флаг") echo "assassin's creed black flag" ;;
@@ -192,7 +185,6 @@ get_synonym() {
         "тхе крю") echo "the crew" ;;
         "трекмания") echo "trackmania" ;;
         "райман") echo "rayman" ;;
-        # --- Шутеры ---
         "колда мв2"|"мв2") echo "call of duty mw2" ;;
         "мв3") echo "call of duty mw3" ;;
         "варзона"|"варзоне"|"колда варзона") echo "call of duty warzone" ;;
@@ -215,7 +207,6 @@ get_synonym() {
         "контра"|"контер страйк") echo "counter-strike" ;;
         "хитмен") echo "hitman" ;;
         "хитман 3") echo "hitman 3" ;;
-        # --- Спорт / гонки ---
         "фифа 24"|"фк 24") echo "fc 24" ;;
         "фифа 23") echo "fifa 23" ;;
         "фифа 22") echo "fifa 22" ;;
@@ -232,7 +223,6 @@ get_synonym() {
         "нид фор спид мост вантед"|"мост вантед") echo "need for speed most wanted" ;;
         "нид фор спид хит"|"хит нфс") echo "need for speed heat" ;;
         "анбаунд"|"нфс анбаунд") echo "need for speed unbound" ;;
-        # --- RPG / стратегии ---
         "биошок") echo "bioshock" ;;
         "биошок 2") echo "bioshock 2" ;;
         "биошок инфинити") echo "bioshock infinite" ;;
@@ -243,7 +233,6 @@ get_synonym() {
         "цив 6"|"цива 6") echo "civilization 6" ;;
         "ксеком"|"ксеном") echo "xcom" ;;
         "ксеном 2") echo "xcom 2" ;;
-        # --- Persona / Atlus ---
         "персона") echo "persona" ;;
         "персона 5"|"п5") echo "persona 5" ;;
         "персона 4") echo "persona 4" ;;
@@ -263,7 +252,6 @@ get_synonym() {
         "тотал вар"|"тотал вор") echo "total war" ;;
         "тотал вар вархаммер"|"тв вархаммер") echo "total war warhammer" ;;
         "футбал менеджер"|"фм") echo "football manager" ;;
-        # --- Nintendo ---
         "зельда ботв"|"ботв") echo "zelda breath of the wild" ;;
         "тотк"|"тиарс оф зе киндом") echo "zelda tears of the kingdom" ;;
         "марио карт") echo "mario kart" ;;
@@ -284,7 +272,6 @@ get_synonym() {
         "донки конг") echo "donkey kong" ;;
         "энимал кроссинг"|"анимал кроссинг"|"энимал кросинг"|"аnimal") echo "animal crossing" ;;
         "анимал кроссинг нью хорайзонс"|"аснх") echo "animal crossing new horizons" ;;
-        # --- PlayStation ---
         "анчартед"|"анч") echo "uncharted" ;;
         "анчартед 4") echo "uncharted 4" ;;
         "анчартед 2") echo "uncharted 2" ;;
@@ -312,7 +299,6 @@ get_synonym() {
         "киллзоун") echo "killzone" ;;
         "гран туризмо"|"гт") echo "gran turismo" ;;
         "гт7") echo "gran turismo 7" ;;
-        # --- Capcom ---
         "резидент ивел") echo "resident evil" ;;
         "резидент ивел 2"|"ре2") echo "resident evil 2" ;;
         "резидент ивел 4"|"ре4"|"резидент 4") echo "resident evil 4" ;;
@@ -329,7 +315,6 @@ get_synonym() {
         "драгон догма 2"|"дд2") echo "dragon's dogma 2" ;;
         "онимьюша"|"онемуша") echo "onimusha" ;;
         "асура") echo "asura's wrath" ;;
-        # --- Файтинги ---
         "стрит файтер"|"сф") echo "street fighter" ;;
         "стрит файтер 6"|"стф 6") echo "street fighter 6" ;;
         "теккен") echo "tekken" ;;
@@ -340,7 +325,6 @@ get_synonym() {
         "мк 11"|"мортал 11") echo "mortal kombat 11" ;;
         "инджастис") echo "injustice" ;;
         "инджастис 2") echo "injustice 2" ;;
-        # --- Final Fantasy / JRPG ---
         "финал фэнтези"|"фф"|"финалка") echo "final fantasy" ;;
         "фф7"|"финал фэнтези 7") echo "final fantasy 7" ;;
         "фф7 ремейк") echo "final fantasy 7 remake" ;;
@@ -363,7 +347,6 @@ get_synonym() {
         "бравелли") echo "bravely default" ;;
         "паразит ив") echo "parasite eve" ;;
         "кронос"|"хроно") echo "chrono trigger" ;;
-        # --- Аниме-игры ---
         "наруто") echo "naruto" ;;
         "наруто шиппуден") echo "naruto shippuden" ;;
         "наруто ултимейт"|"ултимейт ниндзя шторм"|"ултимейт ниндзя сторм") echo "naruto ultimate ninja storm" ;;
@@ -373,7 +356,6 @@ get_synonym() {
         "какарот") echo "dragon ball z kakarot" ;;
         "драгон болл файтерз"|"дбфз") echo "dragon ball fighterz" ;;
         "ван пис"|"уан пис"|"уанпис") echo "one piece" ;;
-        # --- Sonic / Yakuza (доп) ---
         "соник 2") echo "sonic 2" ;;
         "соник адвенчер") echo "sonic adventure" ;;
         "соник мэния") echo "sonic mania" ;;
@@ -387,7 +369,6 @@ get_synonym() {
         "лост джаджмент") echo "lost judgment" ;;
         "like a dragon gaiden"|"лайк э драгон гайден") echo "like a dragon gaiden" ;;
         "лайк э драгон инфинит") echo "like a dragon infinite wealth" ;;
-        # --- Blizzard / стратегии ---
         "сталкрафт 2"|"ст2"|"старкрафт 2") echo "starcraft 2" ;;
         "варкрафт 3"|"вк3") echo "warcraft 3" ;;
         "варкрафт 2") echo "warcraft 2" ;;
@@ -440,7 +421,6 @@ get_synonym() {
         "арк 2") echo "ark 2" ;;
         "палворлд"|"пал ворлд") echo "palworld" ;;
         "эншраудед") echo "enshrouded" ;;
-        # --- Хорроры / кооп ---
         "дед бай дейлайт"|"дбд"|"дед бай") echo "dead by daylight" ;;
         "фрайдей 13"|"фрайдэй") echo "friday the 13th" ;;
         "лефт фор дед"|"л4д") echo "left 4 dead" ;;
@@ -472,7 +452,6 @@ get_synonym() {
         "балатро") echo "balatro" ;;
         "вампир сурвайворс"|"вампир сурвайвор") echo "vampire survivors" ;;
         "бротато") echo "brotato" ;;
-        # --- Minecraft / Roblox ---
         "майнкрафт 2") echo "minecraft 2" ;;
         "майнкрафт данженс"|"майн данженс") echo "minecraft dungeons" ;;
         "майнкрафт легендс"|"майн легендс") echo "minecraft legends" ;;
@@ -638,5 +617,5 @@ while true; do
 
     echo ""
     printf "  Нажмите Enter для нового поиска..."
-    read -r _ || break
 done
+    read -r _ || break
