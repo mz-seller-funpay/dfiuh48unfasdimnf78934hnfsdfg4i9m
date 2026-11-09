@@ -51,7 +51,7 @@ SYNONYMS = {
     "сталкер": "stalker", "метро": "metro", "фоллаут": "fallout", "фаллаут": "fallout",
     "ассасин": "assassin", "крид": "creed",  "фар край": "far cry", "фаркрай": "far cry",
     "батлфилд": "battlefield", "колда": "call of duty", "кол оф дьюти": "call of duty",
-    "фифа": "fc", "фифа 25": "fc 25", "stalker": "S.T.A.L.K.E.R", "еа фк": "fc 25",
+    "фифа": "fc", "фифа 25": "fc 25", "сталкер": "S.T.A.L.K.E.R", "еа фк": "fc 25",
     "форза": "forza", "хорайзон": "horizon", "зелда": "zelda", "марио": "mario",
     "сонс оф форест": "sons of the forest", "форест": "the forest", "лес": "the forest",
     "рафт": "raft", "портал": "portal", "майнкрафт": "minecraft",
