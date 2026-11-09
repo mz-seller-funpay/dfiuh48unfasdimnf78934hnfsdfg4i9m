@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-CURRENT_VERSION="1.0.0"
+CURRENT_VERSION="1.0.1"
 RAW_URL="https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%2Cdrlhng580w7"
 VERSION_URL="https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/dUHBIy7bversiond4fonewui"
 SCRIPT_URL="https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/linux.sh"
@@ -52,6 +52,7 @@ check_for_updates() {
         mv "$tmp_file" "$0"
         chmod +x "$0"
         echo "  Скрипт обновлён! Перезапускаем..."
+        sleep 1
         exec "$0"
     else
         rm -f "$tmp_file"
