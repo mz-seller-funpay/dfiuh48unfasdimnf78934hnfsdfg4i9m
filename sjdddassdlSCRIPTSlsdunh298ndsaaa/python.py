@@ -5,6 +5,14 @@ import urllib.request
 import re
 import shutil
 import time
+from difflib import SequenceMatcher
+
+# --- Опциональная зависимость для умного поиска ---
+try:
+    import pymorphy2
+    MORPH = pymorphy2.MorphAnalyzer()
+except ImportError:
+    MORPH = None
 
 CURRENT_VERSION = "1.0.1"
 RAW_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%2Cdrlhng580w7"
@@ -45,6 +53,32 @@ def set_title(title):
 
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
+
+
+def normalize_word(word):
+    """Приводит слово к нижнему регистру и (если возможно) к нормальной форме."""
+    w = word.lower().strip()
+    if MORPH and re.match(r'^[а-яё]+$', w):
+        return MORPH.parse(w)[0].normal_form
+    return w
+
+
+def fuzzy_match(text, query, threshold=0.75):
+    """Нечёткое сравнение: возвращает True, если текст похож на запрос."""
+    if not text or not query:
+        return False
+    t = text.lower()
+    q = query.lower()
+    # Прямое вхождение (быстрый путь)
+    if q in t:
+        return True
+    # Нечёткое сравнение по всей строке и по словам
+    if SequenceMatcher(None, t, q).ratio() >= threshold:
+        return True
+    for word in re.split(r'[^a-zа-яё0-9]+', t):
+        if word and SequenceMatcher(None, word, q).ratio() >= threshold:
+            return True
+    return False
 
 
 def check_for_updates():
@@ -90,7 +124,6 @@ def check_for_updates():
     except Exception as e:
         print(f"  [!] Не удалось записать файл: {e}")
         print("  Возможно, нет прав на запись в эту папку.")
-        print("  Закройте скрипт и запустите его снова вручную.")
 
 
 def download_and_decode():
@@ -112,7 +145,7 @@ def format_games(games_line, query_list):
     matched = []
     for qq in query_list:
         for g in games:
-            if re.search(re.escape(qq), g, re.IGNORECASE) and g not in matched:
+            if g not in matched and (qq.lower() in g.lower() or fuzzy_match(g, qq)):
                 matched.append(g)
     if total <= 3:
         return ", ".join(games)
@@ -127,9 +160,21 @@ def format_games(games_line, query_list):
 
 def search(lines, query):
     q = query.strip()
+    if not q:
+        return
+
+    # Умная подготовка запроса
     q_lower = q.lower()
     alt = SYNONYMS.get(q_lower)
-    queries = [q] + ([alt] if alt else [])
+    queries = [q]
+    if alt:
+        queries.append(alt)
+
+    # Добавляем нормализованную форму русских слов (если pymorphy2 доступен)
+    if MORPH and re.match(r'^[а-яё\s]+$', q_lower):
+        norm = normalize_word(q_lower)
+        if norm and norm not in queries:
+            queries.append(norm)
 
     found = 0
     games = login = password = ""
@@ -141,11 +186,19 @@ def search(lines, query):
         print(f"     \033[90m{re.sub(r'^🔒\s*Пароль:\s*', 'Пароль: ', p)}\033[0m")
         print()
 
+    def is_match(line):
+        for qq in queries:
+            if qq.lower() in line.lower():
+                return True
+            if fuzzy_match(line, qq):
+                return True
+        return False
+
     for line in lines:
         if line.startswith("🎮"):
             games = line
             login = password = ""
-            match = any(re.search(re.escape(qq), line, re.IGNORECASE) for qq in queries)
+            match = is_match(line)
         elif line.startswith("👤"):
             login = line
         elif line.startswith("🔒"):
@@ -177,6 +230,10 @@ def show_header():
     prefix = "  │   автор: "
     print(f"{prefix}{link}" + " " * 20 + "│")
     print(f"  │   версия: {CURRENT_VERSION}".ljust(44) + "│")
+    if MORPH:
+        print("  │   умный поиск: ВКЛ (pymorphy2)          │")
+    else:
+        print("  │   умный поиск: базовый (difflib)        │")
     print("  └─────────────────────────────────────────┘")
     print()
 
