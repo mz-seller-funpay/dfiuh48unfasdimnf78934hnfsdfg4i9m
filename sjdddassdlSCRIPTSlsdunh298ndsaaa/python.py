@@ -7,7 +7,7 @@ import time
 import subprocess
 from difflib import SequenceMatcher
 
-# --- Автоустановка pymorphy3 при первом запуске ---
+
 def ensure_pymorphy3():
     try:
         import pymorphy3  # noqa: F401
@@ -42,7 +42,6 @@ VERSION_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdi
 SCRIPT_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/python.py"
 
 SYNONYMS = {
-    # --- Базовые ---
     "ведьмак": "witcher", "паук": "spider", "гта": "grand theft auto", "gta": "grand theft auto",
     "ведьмак 3": "witcher 3", "скайрим": "skyrim", "дум": "doom", "мортал": "mortal kombat",
     "резидент": "resident evil", "обитель": "resident evil", "томб райдер": "tomb raider",
@@ -50,7 +49,7 @@ SYNONYMS = {
     "бог войны": "god of war", "год оф вар": "god of war", "человек паук": "spider-man",
     "последний из нас": "last of us", "ласт оф ас": "last of us", "мафия": "mafia",
     "душа": "souls", "елден": "elden ring", "элден": "elden ring", "кольцо": "elden ring",
-    "сталкер": "stalker", "метро": "metro", "фоллаут": "fallout", "фаллаут": "fallout",
+    "сталкер": "S.T.A.L.K.E.R", "метро": "metro", "фоллаут": "fallout", "фаллаут": "fallout",
     "ассасин": "assassin", "крид": "creed", "фар край": "far cry", "фаркрай": "far cry",
     "батлфилд": "battlefield", "колда": "call of duty", "кол оф дьюти": "call of duty",
     "фифа": "fc", "фифа 25": "fc 25", "еа фк": "fc 25",
@@ -61,30 +60,25 @@ SYNONYMS = {
     "ведьмак дикая охота": "witcher 3 wild hunt", "киберпанк 2077": "cyberpunk 2077",
     "данганронпа": "danganronpa", "данганронпа 2": "danganronpa 2", "данганронпа v3": "danganronpa v3",
     "данганронпа 3": "danganronpa v3", "данга": "danganronpa",
-    # --- Ведьмак ---
     "ведьмак 2": "witcher 2", "ведьмак 1": "witcher", "ведьмак 3 дикая охота": "witcher 3 wild hunt",
     "гвинт": "gwent", "киберпанк 2": "cyberpunk 2", "ведьмак 4": "witcher 4",
-    # --- Соулслайки ---
     "дарк соулс": "dark souls", "дарк соулз": "dark souls", "дарк соулс 3": "dark souls 3",
     "дарк соулс 2": "dark souls 2", "дс": "dark souls", "дс3": "dark souls 3",
     "секиро": "sekiro", "секиро тени умирают дважды": "sekiro", "бладборн": "bloodborne",
     "блудборн": "bloodborne", "армор кор": "armored core", "арморд кор": "armored core",
     "армор кор 6": "armored core 6", "нио": "nioh", "нио 2": "nioh 2", "лайс оф пи": "lies of p",
     "лордс оф зе фоллен": "lords of the fallen",
-    # --- GTA / Rockstar ---
     "гта 5": "gta 5", "гта5": "gta 5", "gta 5": "gta 5", "гта 6": "gta 6", "gta 6": "gta 6",
     "гта 4": "gta 4", "гта сан": "gta san andreas", "сан андреас": "gta san andreas",
     "рдр": "red dead redemption", "рдр 2": "red dead redemption 2",
     "ред дед": "red dead redemption", "ред дед 2": "red dead redemption 2",
     "мафия 2": "mafia 2", "мафия 3": "mafia 3", "мафия 1": "mafia definitive edition",
     "буллы": "bully", "ла нойр": "l.a. noire",
-    # --- Bethesda ---
     "скайрим 2": "skyrim", "обливион": "oblivion", "морровинд": "morrowind",
     "фоллаут 4": "fallout 4", "фоллаут 3": "fallout 3", "фоллаут 76": "fallout 76",
     "фоллаут нью вегас": "fallout new vegas", "нью вегас": "fallout new vegas",
     "старфилд": "starfield", "дум 2016": "doom 2016", "дум этернал": "doom eternal",
     "дум 3": "doom 3", "квикс": "quake", "вольфенштейн": "wolfenstein",
-    # --- Ubisoft ---
     "ассасин крид": "assassin's creed", "ассасин 2": "assassin's creed 2",
     "ассасин 4": "assassin's creed 4", "ассасин блэк флаг": "assassin's creed black flag",
     "ассасин вальгалла": "assassin's creed valhalla", "вальгалла": "assassin's creed valhalla",
@@ -101,8 +95,7 @@ SYNONYMS = {
     "вотч догс лиджн": "watch dogs legion", "легион": "watch dogs legion",
     "фор хонор": "for honor", "гоуст рикон": "ghost recon", "гоуст рекон": "ghost recon",
     "тхе крю": "the crew", "трекмания": "trackmania", "райман": "rayman",
-    # --- Шутеры ---
-    "колда": "call of duty", "колда мв2": "call of duty mw2", "мв2": "call of duty mw2",
+    "колда мв2": "call of duty mw2", "мв2": "call of duty mw2",
     "мв3": "call of duty mw3", "варзона": "call of duty warzone", "варзоне": "call of duty warzone",
     "код": "call of duty", "батла": "battlefield", "батлфилд 1": "battlefield 1",
     "батлфилд 4": "battlefield 4", "батлфилд 2042": "battlefield 2042", "бф4": "battlefield 4",
@@ -113,7 +106,6 @@ SYNONYMS = {
     "валорaнт": "valorant", "валорант": "valorant", "кске": "cs2", "кс 2": "cs2",
     "кс го": "csgo", "ксго": "csgo", "контра": "counter-strike", "контер страйк": "counter-strike",
     "р6с": "rainbow six siege", "хитмен": "hitman", "хитман 3": "hitman 3",
-    # --- Спорт / гонки ---
     "фифа 24": "fc 24", "фифа 23": "fifa 23", "фифа 22": "fifa 22", "фифа 21": "fifa 21",
     "фк 24": "fc 24", "фк 25": "fc 25", "еа фк 25": "fc 25", "нхл": "nhl", "нба": "nba 2k",
     "нба 2к": "nba 2k", "мадден": "madden", "уефа": "uefa", "ф1": "f1", "ф1 24": "f1 24",
@@ -121,13 +113,11 @@ SYNONYMS = {
     "нид фор спид мост вантед": "need for speed most wanted", "мост вантед": "need for speed most wanted",
     "нид фор спид хит": "need for speed heat", "хит нфс": "need for speed heat",
     "анбаунд": "need for speed unbound", "нфс анбаунд": "need for speed unbound",
-    # --- RPG / стратегии ---
     "биошок": "bioshock", "биошок 2": "bioshock 2", "биошок инфинити": "bioshock infinite",
     "бордерлендс": "borderlands", "бордерлендс 2": "borderlands 2", "бордерлендс 3": "borderlands 3",
     "блур": "borderlands", "сивилизейшн": "civilization", "цива": "civilization",
     "цивилизация": "civilization", "цив 6": "civilization 6", "цива 6": "civilization 6",
     "ксеком": "xcom", "ксеном": "xcom", "ксеном 2": "xcom 2", "мафия дефинитив": "mafia definitive edition",
-    # --- Persona / Atlus ---
     "персона": "persona", "персона 5": "persona 5", "персона 4": "persona 4", "персона 3": "persona 3",
     "персона 5 роял": "persona 5 royal", "п5р": "persona 5 royal", "п5": "persona 5",
     "соул хакерс": "soul hackers", "шх2": "soul hackers 2", "метафор": "metaphor refantazio",
@@ -137,7 +127,6 @@ SYNONYMS = {
     "сонік": "sonic", "соник": "sonic", "соник фронтьерс": "sonic frontiers",
     "тотал вар": "total war", "тотал вор": "total war", "тотал вар вархаммер": "total war warhammer",
     "тв вархаммер": "total war warhammer", "футбал менеджер": "football manager", "фм": "football manager",
-    # --- Nintendo ---
     "зельда": "zelda", "зельда ботв": "zelda breath of the wild", "ботв": "zelda breath of the wild",
     "тотк": "zelda tears of the kingdom", "тиарс оф зе киндом": "zelda tears of the kingdom",
     "марио карт": "mario kart", "марио карт 8": "mario kart 8", "марио оддиси": "mario odyssey",
@@ -146,9 +135,8 @@ SYNONYMS = {
     "покемон ск��рлет": "pokemon scarlet", "покемон вайолет": "pokemon violet",
     "свитч": "switch", "ниндтендо": "nintendo", "нинтендо": "nintendo", "свич": "switch",
     "сплэтун": "splatoon", "сплатун": "splatoon", "метроид": "metroid", "метроид дред": "metroid dread",
-    "кирби": "kirby", "донки конг": "donkey kong", "дк": "donkey kong", "энимал кроссинг": "animal crossing",
+    "кирби": "kirby", "донки конг": "donkey kong", "энимал кроссинг": "animal crossing",
     "анимал кроссинг": "animal crossing", "энимал кросинг": "animal crossing", "аnimal": "animal crossing",
-    # --- PlayStation ---
     "анчартед": "uncharted", "анчартед 4": "uncharted 4", "анчартед 2": "uncharted 2",
     "анч": "uncharted", "бог войны 2018": "god of war 2018", "год оф вар рагнарок": "god of war ragnarok",
     "рагнарек": "god of war ragnarok", "рагнарок": "god of war ragnarok",
@@ -167,7 +155,6 @@ SYNONYMS = {
     "дес стрендинг": "death stranding", "дес стрендинг 2": "death stranding 2", "дс2": "death stranding 2",
     "дэйс ган": "days gone", "дейс ган": "days gone", "инфэмос": "infamous", "инфамос": "infamous",
     "киллзоун": "killzone", "гран туризмо": "gran turismo", "гт": "gran turismo", "гт7": "gran turismo 7",
-    # --- Capcom ---
     "резидент ивел": "resident evil", "резидент ивел 2": "resident evil 2", "ре2": "resident evil 2",
     "резидент ивел 4": "resident evil 4", "ре4": "resident evil 4", "резидент 4": "resident evil 4",
     "резидент ивел 7": "resident evil 7", "ре7": "resident evil 7", "резидент 7": "resident evil 7",
@@ -180,13 +167,11 @@ SYNONYMS = {
     "монстер хантер вайлдс": "monster hunter wilds", "мх вайлдс": "monster hunter wilds",
     "драгонс догма": "dragon's dogma", "драгон догма 2": "dragon's dogma 2", "дд2": "dragon's dogma 2",
     "онимьюша": "onimusha", "онемуша": "onimusha", "асура": "asura's wrath",
-    # --- Файтинги ---
     "стрит файтер": "street fighter", "сф": "street fighter", "стрит файтер 6": "street fighter 6",
     "стф 6": "street fighter 6", "теккен": "tekken", "теккен 8": "tekken 8", "т8": "tekken 8",
     "соулкалибур": "soulcalibur", "соул калибур": "soulcalibur", "мортал комбат": "mortal kombat",
     "мк": "mortal kombat", "мк1": "mortal kombat 1", "мк 11": "mortal kombat 11", "мортал 11": "mortal kombat 11",
     "мортал комбат 1": "mortal kombat 1", "инджастис": "injustice", "инджастис 2": "injustice 2",
-    # --- Final Fantasy / JRPG ---
     "финал фэнтези": "final fantasy", "фф": "final fantasy", "финалка": "final fantasy",
     "фф7": "final fantasy 7", "финал фэнтези 7": "final fantasy 7", "фф7 ремейк": "final fantasy 7 remake",
     "фф7 ребёрс": "final fantasy 7 rebirth", "фф16": "final fantasy 16", "финал фэнтези 16": "final fantasy 16",
@@ -198,12 +183,10 @@ SYNONYMS = {
     "драгон квест билдерс": "dragon quest builders", "октопат": "octopath traveler",
     "октопат 2": "octopath traveler 2", "триангл": "triangle strategy", "бравелли": "bravely default",
     "паразит ив": "parasite eve", "кронос": "chrono trigger", "хроно": "chrono trigger",
-    # --- Соулслайки (доп) ---
     "дарк соулс ремастер": "dark souls remastered", "дср": "dark souls remastered",
     "элден ринг шэдоу": "elden ring shadow of the erdtree", "эрдтри": "elden ring shadow of the erdtree",
     "арморд кор 6": "armored core 6", "ас6": "armored core 6", "аc6": "armored core 6",
     "теккен 7": "tekken 7", "т7": "tekken 7", "соул калибур 6": "soulcalibur 6", "ск6": "soulcalibur 6",
-    # --- Аниме-игры ---
     "наруто": "naruto", "наруто шиппуден": "naruto shippuden", "наруто ултимейт": "naruto ultimate ninja storm",
     "ултимейт ниндзя шторм": "naruto ultimate ninja storm", "ултимейт ниндзя сторм": "naruto ultimate ninja storm",
     "джамп форс": "jump force", "дрэгон бол": "dragon ball", "дрэгон болл": "dragon ball",
@@ -211,14 +194,12 @@ SYNONYMS = {
     "драгон болл з": "dragon ball z", "какарот": "dragon ball z kakarot",
     "драгон болл файтерз": "dragon ball fighterz", "дбфз": "dragon ball fighterz",
     "ван пис": "one piece", "уан пис": "one piece", "уанпис": "one piece",
-    # --- Sonic / Yakuza ---
     "соник 2": "sonic 2", "соник адвенчер": "sonic adventure", "соник мэния": "sonic mania",
     "соник суперстарз": "sonic superstars", "соник и сотс": "sonic and the secret rings",
     "якудза 6": "yakuza 6", "якудза 7": "yakuza 7", "якудза кивами": "yakuza kiwami",
     "якудза кивами 2": "yakuza kiwami 2", "исчин": "yakuza ishin",
     "лост джаджмент": "lost judgment", "like a dragon gaiden": "like a dragon gaiden",
     "лайк э драгон гайден": "like a dragon gaiden", "лайк э драгон инфинит": "like a dragon infinite wealth",
-    # --- Blizzard / стратегии ---
     "сталкрафт 2": "starcraft 2", "ст2": "starcraft 2", "старкрафт 2": "starcraft 2",
     "варкрафт 3": "warcraft 3", "вк3": "warcraft 3", "варкрафт 2": "warcraft 2",
     "ворлд оф варкрафт": "world of warcraft", "вов": "world of warcraft", "вов классик": "wow classic",
@@ -241,7 +222,6 @@ SYNONYMS = {
     "рифтвorld": "riftworld", "рифтворлд": "riftworld", "валхейм": "valheim", "валхейм 2": "valheim 2",
     "раст": "rust", "раст 2": "rust 2", "арк": "ark survival evolved", "арк сурвайвал": "ark survival evolved",
     "арк 2": "ark 2", "палворлд": "palworld", "пал ворлд": "palworld", "эншраудед": "enshrouded",
-    # --- Хорроры / кооп ---
     "дед бай дейлайт": "dead by daylight", "дбд": "dead by daylight", "дед бай": "dead by daylight",
     "фрайдей 13": "friday the 13th", "фрайдэй": "friday the 13th", "лефт фор дед": "left 4 dead",
     "л4д": "left 4 dead", "лефт фор дед 2": "left 4 dead 2", "л4д2": "left 4 dead 2",
@@ -262,7 +242,6 @@ SYNONYMS = {
     "инскрипшн": "inscryption", "инскрипшен": "inscryption", "слэй зе спайр": "slay the spire",
     "слэй": "slay the spire", "балатро": "balatro", "вампир сурвайворс": "vampire survivors",
     "вампир сурвайвор": "vampire survivors", "бротато": "brotato",
-    # --- Minecraft / Roblox ---
     "майнкрафт 2": "minecraft 2", "майнкрафт данженс": "minecraft dungeons", "майн данженс": "minecraft dungeons",
     "майнкрафт легендс": "minecraft legends", "майн легендс": "minecraft legends",
     "роблокс": "roblox", "роблокс 2": "roblox 2", "роблокс студио": "roblox studio",
