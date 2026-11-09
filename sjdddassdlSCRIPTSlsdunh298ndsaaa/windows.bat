@@ -51,7 +51,6 @@ if errorlevel 1 (
 )
 
 echo   Запускаем обновление...
-copy /y "%~f0" "%~f0.bak" >nul
 
 powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c', 'timeout /t 2 >nul & copy /y \"%UPD_FILE%\" \"%~f0\" >nul & del /q \"%UPD_FILE%\" >nul & start \"\" \"%~f0\"'"
 exit /b
@@ -115,7 +114,7 @@ powershell -NoProfile -Command ^
   "  'бог войны'='god of war'; 'год оф вар'='god of war'; 'человек паук'='spider-man';" ^
   "  'последний из нас'='last of us'; 'ласт оф ас'='last of us'; 'мафия'='mafia';" ^
   "  'душа'='souls'; 'елден'='elden ring'; 'элден'='elden ring'; 'кольцо'='elden ring';" ^
-  "  'сталкер'='stalker'; 'метро'='metro'; 'фоллаут'='fallout'; 'фаллаут'='fallout';" ^
+  "  'сталкер'='S.T.A.L.K.E.R'; 'метро'='metro'; 'фоллаут'='fallout'; 'фаллаут'='fallout';" ^
   "  'ассасин'='assassin'; 'крид'='creed'; 'фар край'='far cry'; 'фаркрай'='far cry';" ^
   "  'батлфилд'='battlefield'; 'колда'='call of duty'; 'кол оф дьюти'='call of duty';" ^
   "  'фифа'='fc'; 'фифа 25'='fc 25'; 'еа фк'='fc 25';" ^
