@@ -5,16 +5,40 @@ import urllib.request
 import re
 import shutil
 import time
+import subprocess
 from difflib import SequenceMatcher
 
-# --- Опциональная зависимость для умного поиска ---
-try:
+# --- Автоустановка pymorphy2 при первом запуске ---
+def ensure_pymorphy2():
+    try:
+        import pymorphy2  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    print("  Установка зависимости pymorphy2 (один раз)...")
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "pymorphy2", "pymorphy2-dicts-ru"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        import pymorphy2  # noqa: F401
+        print("  Готово.")
+        return True
+    except Exception as e:
+        print(f"  [!] Не удалось установить pymorphy2: {e}")
+        print("  Продолжаем без нормализации русских слов.")
+        return False
+
+
+HAS_MORPH = ensure_pymorphy2()
+if HAS_MORPH:
     import pymorphy2
     MORPH = pymorphy2.MorphAnalyzer()
-except ImportError:
+else:
     MORPH = None
 
-CURRENT_VERSION = "1.0.1"
+CURRENT_VERSION = "1.0.0"
 RAW_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%2Cdrlhng580w7"
 VERSION_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/dUHBIy7bversiond4fonewui"
 SCRIPT_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/python.py"
@@ -56,7 +80,6 @@ def clear():
 
 
 def normalize_word(word):
-    """Приводит слово к нижнему регистру и (если возможно) к нормальной форме."""
     w = word.lower().strip()
     if MORPH and re.match(r'^[а-яё]+$', w):
         return MORPH.parse(w)[0].normal_form
@@ -64,15 +87,12 @@ def normalize_word(word):
 
 
 def fuzzy_match(text, query, threshold=0.75):
-    """Нечёткое сравнение: возвращает True, если текст похож на запрос."""
     if not text or not query:
         return False
     t = text.lower()
     q = query.lower()
-    # Прямое вхождение (быстрый путь)
     if q in t:
         return True
-    # Нечёткое сравнение по всей строке и по словам
     if SequenceMatcher(None, t, q).ratio() >= threshold:
         return True
     for word in re.split(r'[^a-zа-яё0-9]+', t):
@@ -163,14 +183,12 @@ def search(lines, query):
     if not q:
         return
 
-    # Умная подготовка запроса
     q_lower = q.lower()
     alt = SYNONYMS.get(q_lower)
     queries = [q]
     if alt:
         queries.append(alt)
 
-    # Добавляем нормализованную форму русских слов (если pymorphy2 доступен)
     if MORPH and re.match(r'^[а-яё\s]+$', q_lower):
         norm = normalize_word(q_lower)
         if norm and norm not in queries:
@@ -230,10 +248,6 @@ def show_header():
     prefix = "  │   автор: "
     print(f"{prefix}{link}" + " " * 20 + "│")
     print(f"  │   версия: {CURRENT_VERSION}".ljust(44) + "│")
-    if MORPH:
-        print("  │   умный поиск: ВКЛ (pymorphy2)          │")
-    else:
-        print("  │   умный поиск: базовый (difflib)        │")
     print("  └─────────────────────────────────────────┘")
     print()
 
