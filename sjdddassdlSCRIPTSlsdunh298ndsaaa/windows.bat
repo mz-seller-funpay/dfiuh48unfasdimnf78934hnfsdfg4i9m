@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 title Поиск аккаунтов Steam — by MisterZidez
 
-set "CURRENT_VERSION=1.0.0"
+set "CURRENT_VERSION=1.0.1"
 set "RAW_URL=https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%%2Cdrlhng580w7"
 set "VERSION_URL=https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/dUHBIy7bversiond4fonewui"
 set "SCRIPT_URL=https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/windows.bat"
@@ -39,6 +39,11 @@ if errorlevel 1 (
     goto :after_update_check
 )
 
+if not exist "%UPD_FILE%" (
+    echo   [!] Временный файл обновления не найден.
+    goto :after_update_check
+)
+
 rem Проверяем, что скачался именно скрипт (маркер RAW_URL)
 findstr /c:"RAW_URL" "%UPD_FILE%" >nul 2>nul
 if errorlevel 1 (
@@ -49,7 +54,8 @@ if errorlevel 1 (
 
 echo   Запускаем обновление...
 copy /y "%~f0" "%~f0.bak" >nul
-start "" /min cmd /c "timeout /t 2 >nul & copy /y \"%UPD_FILE%\" \"%~f0\" >nul & del /q \"%UPD_FILE%\" >nul & start \"\" \"%~f0\" & exit"
+
+powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c', 'timeout /t 2 >nul & copy /y \"%UPD_FILE%\" \"%~f0\" >nul & del /q \"%UPD_FILE%\" >nul & start \"\" \"%~f0\"'"
 exit /b
 
 :after_update_check
