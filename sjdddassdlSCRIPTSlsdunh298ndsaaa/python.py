@@ -1,488 +1,808 @@
-import base64
-import os
-import sys
-import urllib.request
-import re
-import time
-import subprocess
-from difflib import SequenceMatcher
+@echo off
+chcp 65001 >nul
+setlocal enabledelayedexpansion
+title Поиск аккаунтов Steam — by MisterZidez
 
+set "CURRENT_VERSION=1.2.0"
+set "RAW_URL=https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%%2Cdrlhng580w7"
+set "VERSION_URL=https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/dUHBIy7bversiond4fonewui"
+set "SCRIPT_URL=https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/windows.bat"
+set "ACCS_FILE=%TEMP%\acc-steam.txt"
+set "B64_FILE=%TEMP%\acc-steam.b64"
+set "NEWVER_FILE=%TEMP%\newver.txt"
+set "UPD_FILE=%TEMP%\updated_script.bat"
 
-def ensure_pymorphy3():
-    try:
-        import pymorphy3  # noqa: F401
-        return True
-    except ImportError:
-        pass
-    print("  Установка зависимости pymorphy3 (один раз)...")
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", "pymorphy3"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+cls
+echo.
+echo   Проверка обновлений...
+echo.
+
+powershell -NoProfile -Command "try { $v = (Invoke-WebRequest -Uri '%VERSION_URL%' -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop).Content.Trim(); if ($v -ne '%CURRENT_VERSION%') { Write-Output $v; exit 0 } else { exit 1 } } catch { exit 2 }" > "%NEWVER_FILE%" 2>nul
+
+if not exist "%NEWVER_FILE%" goto after_update_check
+set /p NEWVER=<"%NEWVER_FILE%"
+del /q "%NEWVER_FILE%" 2>nul
+
+if not defined NEWVER goto after_update_check
+
+echo   Доступна новая версия: !NEWVER! (у вас %CURRENT_VERSION%)
+set /p "UPD=  Обновить скрипт? (y/n): "
+if /i not "!UPD!"=="y" (
+    echo   Пропускаем обновление.
+    goto after_update_check
+)
+
+echo   Скачиваем новую версию...
+powershell -NoProfile -Command "try { Invoke-WebRequest -Uri '%SCRIPT_URL%' -UseBasicParsing -TimeoutSec 30 -OutFile '%UPD_FILE%' -ErrorAction Stop; exit 0 } catch { exit 1 }"
+if errorlevel 1 (
+    echo   [!] Не удалось скачать обновление.
+    goto after_update_check
+)
+
+if not exist "%UPD_FILE%" (
+    echo   [!] Временный файл обновления не найден.
+    goto after_update_check
+)
+
+findstr /c:"RAW_URL" "%UPD_FILE%" >nul 2>nul
+if errorlevel 1 (
+    echo   [!] Скачанный файл не похож на скрипт. Обновление отменено.
+    del /q "%UPD_FILE%" 2>nul
+    goto after_update_check
+)
+
+echo   Запускаем обновление...
+powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c', 'timeout /t 2 >nul & copy /y \"%UPD_FILE%\" \"%~f0\" >nul & del /q \"%UPD_FILE%\" >nul & start \"\" \"%~f0\"'"
+exit /b
+
+:after_update_check
+cls
+echo.
+echo   Загрузка списка аккаунтов...
+echo.
+
+powershell -NoProfile -Command "try { Invoke-WebRequest -Uri '%RAW_URL%' -UseBasicParsing -TimeoutSec 30 -OutFile '%B64_FILE%' -ErrorAction Stop; exit 0 } catch { exit 1 }"
+if errorlevel 1 (
+    echo   [!] Не удалось скачать файл.
+    if exist "%ACCS_FILE%" (
+        echo   Используем кэш из TEMP.
+    ) else (
+        pause
+        exit /b
+    )
+    goto search
+)
+
+certutil -decode "%B64_FILE%" "%ACCS_FILE%" >nul 2>nul
+del /q "%B64_FILE%" 2>nul
+
+if not exist "%ACCS_FILE%" (
+    echo   [!] Не удалось декодировать файл.
+    pause
+    exit /b
+)
+
+findstr /c:"Логин:" "%ACCS_FILE%" >nul 2>nul
+if errorlevel 1 (
+    echo   [!] Файл повреждён.
+    del /q "%ACCS_FILE%" 2>nul
+    pause
+    exit /b
+)
+
+echo   Готово.
+timeout /t 1 >nul
+cls
+
+:search
+echo.
+echo   ┌─────────────────────────────────────────┐
+echo   │   ПОИСК АККАУНТОВ STEAM                 │
+echo   │   автор: MisterZidez                    │
+echo   │   версия: %CURRENT_VERSION%                   │
+echo   └─────────────────────────────────────────┘
+echo.
+set "QUERY="
+set /p "QUERY=  Введите игру: "
+
+if "%QUERY%"=="" goto search
+
+cls
+echo.
+echo   Поиск: %QUERY%
+echo   ──────────────────────────────────────────
+echo.
+
+rem === Определяем синоним ===
+set "ALT="
+call :get_synonym "%QUERY%"
+
+rem === Собираем список запросов для поиска ===
+set "Q1=%QUERY%"
+set "Q2=%ALT%"
+set "Q3="
+set "Q4="
+
+rem Обрезаем запрос до 5 символов для нечёткого поиска
+set "QTRIM=!QUERY:~0,5!"
+if not "!QTRIM!"=="%QUERY%" set "Q3=!QTRIM!"
+
+rem Если запрос из нескольких слов — берём первое слово
+for /f "tokens=1 delims= " %%W in ("%QUERY%") do (
+    if not "%%W"=="%QUERY%" set "Q4=%%W"
+)
+
+set "FOUND=0"
+set "MATCH=0"
+set "GAMES="
+set "LOGIN="
+set "PASS="
+
+for /f "usebackq delims=" %%L in ("%ACCS_FILE%") do (
+    set "LINE=%%L"
+
+    echo !LINE! | findstr /c:"Игры:" >nul
+    if !errorlevel!==0 (
+        set "GAMES=!LINE!"
+        set "LOGIN="
+        set "PASS="
+        set "MATCH=0"
+
+        echo !LINE! | findstr /i /c:"!Q1!" >nul
+        if !errorlevel!==0 set "MATCH=1"
+        if "!MATCH!"=="0" if defined Q2 (
+            echo !LINE! | findstr /i /c:"!Q2!" >nul
+            if !errorlevel!==0 set "MATCH=1"
         )
-        import pymorphy3  # noqa: F401
-        print("  Готово.")
-        return True
-    except Exception as e:
-        print(f"  [!] Не удалось установить pymorphy3: {e}")
-        print("  Продолжаем без нормализации русских слов.")
-        return False
+        if "!MATCH!"=="0" if defined Q3 (
+            echo !LINE! | findstr /i /c:"!Q3!" >nul
+            if !errorlevel!==0 set "MATCH=1"
+        )
+        if "!MATCH!"=="0" if defined Q4 (
+            echo !LINE! | findstr /i /c:"!Q4!" >nul
+            if !errorlevel!==0 set "MATCH=1"
+        )
+    ) else (
+        echo !LINE! | findstr /c:"Логин:" >nul
+        if !errorlevel!==0 (
+            set "LOGIN=!LINE!"
+        ) else (
+            echo !LINE! | findstr /c:"Пароль:" >nul
+            if !errorlevel!==0 (
+                set "PASS=!LINE!"
+            ) else (
+                if "!LINE!"=="" (
+                    if !MATCH!==1 (
+                        echo   !GAMES!
+                        echo      !LOGIN!
+                        echo      !PASS!
+                        echo.
+                        set /a FOUND+=1
+                        set "MATCH=0"
+                    )
+                )
+            )
+        )
+    )
+)
 
+if !MATCH!==1 (
+    echo   !GAMES!
+    echo      !LOGIN!
+    echo      !PASS!
+    echo.
+    set /a FOUND+=1
+)
 
-HAS_MORPH = ensure_pymorphy3()
-if HAS_MORPH:
-    import pymorphy3
-    MORPH = pymorphy3.MorphAnalyzer()
-else:
-    MORPH = None
+echo   ──────────────────────────────────────────
+if !FOUND!==0 (
+    echo   Ничего не найдено.
+) else (
+    echo   Найдено: !FOUND!
+)
+if defined ALT (
+    echo   (искали также: !ALT!)
+)
 
-CURRENT_VERSION = "1.1.0"
-RAW_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/cse4uymth98e7yehx97e4x90gs%2Cdrlhng580w7"
-VERSION_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/dUHBIy7bversiond4fonewui"
-SCRIPT_URL = "https://raw.githubusercontent.com/mz-seller-funpay/dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/sjdddassdlSCRIPTSlsdunh298ndsaaa/python.py"
+echo.
+pause
+cls
+goto search
 
-SYNONYMS = {
-    "ведьмак": "witcher", "паук": "spider", "гта": "grand theft auto", "gta": "grand theft auto",
-    "ведьмак 3": "witcher 3", "скайрим": "skyrim", "дум": "doom", "мортал": "mortal kombat",
-    "резидент": "resident evil", "обитель": "resident evil", "томб райдер": "tomb raider",
-    "дайинг": "dying light", "киберпанк": "cyberpunk", "хогвартс": "hogwarts",
-    "бог войны": "god of war", "год оф вар": "god of war", "человек паук": "spider-man",
-    "последний из нас": "last of us", "ласт оф ас": "last of us", "мафия": "mafia",
-    "душа": "souls", "елден": "elden ring", "элден": "elden ring", "кольцо": "elden ring",
-    "сталкер": "S.T.A.L.K.E.R", "метро": "metro", "фоллаут": "fallout", "фаллаут": "fallout",
-    "ассасин": "assassin", "крид": "creed", "фар край": "far cry", "фаркрай": "far cry",
-    "батлфилд": "battlefield", "колда": "call of duty", "кол оф дьюти": "call of duty",
-    "фифа": "fc", "фифа 25": "fc 25", "еа фк": "fc 25",
-    "форза": "forza", "хорайзон": "horizon", "зелда": "zelda", "марио": "mario",
-    "сонс оф форест": "sons of the forest", "форест": "the forest", "лес": "the forest",
-    "рафт": "raft", "портал": "portal", "майнкрафт": "minecraft",
-    "террария": "terraria", "тетрис": "tetris", "варкрафт": "warcraft", "старкрафт": "starcraft",
-    "ведьмак дикая охота": "witcher 3 wild hunt", "киберпанк 2077": "cyberpunk 2077",
-    "данганронпа": "danganronpa", "данганронпа 2": "danganronpa 2", "данганронпа v3": "danganronpa v3",
-    "данганронпа 3": "danganronpa v3", "данга": "danganronpa",
-    "ведьмак 2": "witcher 2", "ведьмак 1": "witcher", "ведьмак 3 дикая охота": "witcher 3 wild hunt",
-    "гвинт": "gwent", "киберпанк 2": "cyberpunk 2", "ведьмак 4": "witcher 4",
-    "дарк соулс": "dark souls", "дарк соулз": "dark souls", "дарк соулс 3": "dark souls 3",
-    "дарк соулс 2": "dark souls 2", "дс": "dark souls", "дс3": "dark souls 3",
-    "секиро": "sekiro", "секиро тени умирают дважды": "sekiro", "бладборн": "bloodborne",
-    "блудборн": "bloodborne", "армор кор": "armored core", "арморд кор": "armored core",
-    "армор кор 6": "armored core 6", "нио": "nioh", "нио 2": "nioh 2", "лайс оф пи": "lies of p",
-    "лордс оф зе фоллен": "lords of the fallen",
-    "гта 5": "gta 5", "гта5": "gta 5", "gta 5": "gta 5", "гта 6": "gta 6", "gta 6": "gta 6",
-    "гта 4": "gta 4", "гта сан": "gta san andreas", "сан андреас": "gta san andreas",
-    "рдр": "red dead redemption", "рдр 2": "red dead redemption 2",
-    "ред дед": "red dead redemption", "ред дед 2": "red dead redemption 2",
-    "мафия 2": "mafia 2", "мафия 3": "mafia 3", "мафия 1": "mafia definitive edition",
-    "буллы": "bully", "ла нойр": "l.a. noire",
-    "скайрим 2": "skyrim", "обливион": "oblivion", "морровинд": "morrowind",
-    "фоллаут 4": "fallout 4", "фоллаут 3": "fallout 3", "фоллаут 76": "fallout 76",
-    "фоллаут нью вегас": "fallout new vegas", "нью вегас": "fallout new vegas",
-    "старфилд": "starfield", "дум 2016": "doom 2016", "дум этернал": "doom eternal",
-    "дум 3": "doom 3", "квикс": "quake", "вольфенштейн": "wolfenstein",
-    "ассасин крид": "assassin's creed", "ассасин 2": "assassin's creed 2",
-    "ассасин 4": "assassin's creed 4", "ассасин блэк флаг": "assassin's creed black flag",
-    "ассасин вальгалла": "assassin's creed valhalla", "вальгалла": "assassin's creed valhalla",
-    "ассасин ориджинс": "assassin's creed origins", "ориджинс": "assassin's creed origins",
-    "ассасин одессей": "assassin's creed odyssey", "одессей": "assassin's creed odyssey",
-    "ассасин мираж": "assassin's creed mirage", "миража": "assassin's creed mirage",
-    "фар край 3": "far cry 3", "фар край 4": "far cry 4", "фар край 5": "far cry 5",
-    "фар край 6": "far cry 6", "примал": "far cry primal", "фар край нью давн": "far cry new dawn",
-    "дивижн": "the division", "дивижн 2": "the division 2", "рэйнбоу сикс": "rainbow six",
-    "р6": "rainbow six siege", "рэйнбоу сикс сидж": "rainbow six siege",
-    "принс оф персия": "prince of persia", "принц персии": "prince of persia",
-    "сплинтер селл": "splinter cell", "сплинтер": "splinter cell",
-    "варч": "watch dogs", "вотч догс": "watch dogs", "вотч догс 2": "watch dogs 2",
-    "вотч догс лиджн": "watch dogs legion", "легион": "watch dogs legion",
-    "фор хонор": "for honor", "гоуст рикон": "ghost recon", "гоуст рекон": "ghost recon",
-    "тхе крю": "the crew", "трекмания": "trackmania", "райман": "rayman",
-    "колда мв2": "call of duty mw2", "мв2": "call of duty mw2",
-    "мв3": "call of duty mw3", "варзона": "call of duty warzone", "варзоне": "call of duty warzone",
-    "код": "call of duty", "батла": "battlefield", "батлфилд 1": "battlefield 1",
-    "батлфилд 4": "battlefield 4", "батлфилд 2042": "battlefield 2042", "бф4": "battlefield 4",
-    "апекс": "apex legends", "апекс легендс": "apex legends", "титанфолл": "titanfall",
-    "титанфолл 2": "titanfall 2", "дестини": "destiny", "дестини 2": "destiny 2",
-    "овервотч": "overwatch", "овервоч": "overwatch", "оверватч": "overwatch", "ов": "overwatch",
-    "ов 2": "overwatch 2", "овервотч 2": "overwatch 2", "паладинс": "paladins",
-    "валорaнт": "valorant", "валорант": "valorant", "кске": "cs2", "кс 2": "cs2",
-    "кс го": "csgo", "ксго": "csgo", "контра": "counter-strike", "контер страйк": "counter-strike",
-    "р6с": "rainbow six siege", "хитмен": "hitman", "хитман 3": "hitman 3",
-    "фифа 24": "fc 24", "фифа 23": "fifa 23", "фифа 22": "fifa 22", "фифа 21": "fifa 21",
-    "фк 24": "fc 24", "фк 25": "fc 25", "еа фк 25": "fc 25", "нхл": "nhl", "нба": "nba 2k",
-    "нба 2к": "nba 2k", "мадден": "madden", "уефа": "uefa", "ф1": "f1", "ф1 24": "f1 24",
-    "скайфолл": "skyfall", "нид фор спид": "need for speed", "нфс": "need for speed",
-    "нид фор спид мост вантед": "need for speed most wanted", "мост вантед": "need for speed most wanted",
-    "нид фор спид хит": "need for speed heat", "хит нфс": "need for speed heat",
-    "анбаунд": "need for speed unbound", "нфс анбаунд": "need for speed unbound",
-    "биошок": "bioshock", "биошок 2": "bioshock 2", "биошок инфинити": "bioshock infinite",
-    "бордерлендс": "borderlands", "бордерлендс 2": "borderlands 2", "бордерлендс 3": "borderlands 3",
-    "блур": "borderlands", "сивилизейшн": "civilization", "цива": "civilization",
-    "цивилизация": "civilization", "цив 6": "civilization 6", "цива 6": "civilization 6",
-    "ксеком": "xcom", "ксеном": "xcom", "ксеном 2": "xcom 2", "мафия дефинитив": "mafia definitive edition",
-    "персона": "persona", "персона 5": "persona 5", "персона 4": "persona 4", "персона 3": "persona 3",
-    "персона 5 роял": "persona 5 royal", "п5р": "persona 5 royal", "п5": "persona 5",
-    "соул хакерс": "soul hackers", "шх2": "soul hackers 2", "метафор": "metaphor refantazio",
-    "метафора": "metaphor refantazio", "катсураги": "catherine", "кетрин": "catherine",
-    "ярн": "yakuza", "якудза": "yakuza", "якудза 0": "yakuza 0", "якудза лайк э драгон": "yakuza like a dragon",
-    "лайк э драгон": "yakuza like a dragon", "джаджмент": "judgment", "лондон": "yakuza",
-    "сонік": "sonic", "соник": "sonic", "соник фронтьерс": "sonic frontiers",
-    "тотал вар": "total war", "тотал вор": "total war", "тотал вар вархаммер": "total war warhammer",
-    "тв вархаммер": "total war warhammer", "футбал менеджер": "football manager", "фм": "football manager",
-    "зельда": "zelda", "зельда ботв": "zelda breath of the wild", "ботв": "zelda breath of the wild",
-    "тотк": "zelda tears of the kingdom", "тиарс оф зе киндом": "zelda tears of the kingdom",
-    "марио карт": "mario kart", "марио карт 8": "mario kart 8", "марио оддиси": "mario odyssey",
-    "супер марио": "super mario", "супер марио брос": "super mario bros", "смб": "super mario bros",
-    "покемон": "pokemon", "покемоны": "pokemon", "покемон го": "pokemon go",
-    "покемон ск��рлет": "pokemon scarlet", "покемон вайолет": "pokemon violet",
-    "свитч": "switch", "ниндтендо": "nintendo", "нинтендо": "nintendo", "свич": "switch",
-    "сплэтун": "splatoon", "сплатун": "splatoon", "метроид": "metroid", "метроид дред": "metroid dread",
-    "кирби": "kirby", "донки конг": "donkey kong", "энимал кроссинг": "animal crossing",
-    "анимал кроссинг": "animal crossing", "энимал кросинг": "animal crossing", "аnimal": "animal crossing",
-    "анчартед": "uncharted", "анчартед 4": "uncharted 4", "анчартед 2": "uncharted 2",
-    "анч": "uncharted", "бог войны 2018": "god of war 2018", "год оф вар рагнарок": "god of war ragnarok",
-    "рагнарек": "god of war ragnarok", "рагнарок": "god of war ragnarok",
-    "год оф вар 3": "god of war 3", "год 3": "god of war 3",
-    "хорайзон зеро давн": "horizon zero dawn", "хорайзон 2": "horizon forbidden west",
-    "запретный запад": "horizon forbidden west", "хорайзон форбидден вест": "horizon forbidden west",
-    "ласт оф ас 2": "last of us 2", "ласт оф ас парт 2": "last of us part 2", "лоу 2": "last of us 2",
-    "ласт оф ас 1": "last of us part 1", "ласт оф ас ремейк": "last of us part 1",
-    "гоуст оф цушима": "ghost of tsushima", "гоуст": "ghost of tsushima", "цусима": "ghost of tsushima",
-    "гоуст оф цусима": "ghost of tsushima", "спайдермен": "spider-man", "спайдер мен": "spider-man",
-    "человек паук 2": "spider-man 2", "спайдермен 2": "spider-man 2", "человек-паук 2": "spider-man 2",
-    "майлз моралес": "spider-man miles morales", "майлз": "spider-man miles morales",
-    "ратчет и кланк": "ratchet and clank", "ратчет": "ratchet and clank",
-    "бладборн 2": "bloodborne 2", "ретурнал": "returnal", "демонс соулс": "demon's souls",
-    "демон соулс": "demon's souls", "сайлент хилл": "silent hill", "сайлент хилл 2": "silent hill 2",
-    "дес стрендинг": "death stranding", "дес стрендинг 2": "death stranding 2", "дс2": "death stranding 2",
-    "дэйс ган": "days gone", "дейс ган": "days gone", "инфэмос": "infamous", "инфамос": "infamous",
-    "киллзоун": "killzone", "гран туризмо": "gran turismo", "гт": "gran turismo", "гт7": "gran turismo 7",
-    "резидент ивел": "resident evil", "резидент ивел 2": "resident evil 2", "ре2": "resident evil 2",
-    "резидент ивел 4": "resident evil 4", "ре4": "resident evil 4", "резидент 4": "resident evil 4",
-    "резидент ивел 7": "resident evil 7", "ре7": "resident evil 7", "резидент 7": "resident evil 7",
-    "резидент ивел вилладж": "resident evil village", "вилладж": "resident evil village", "ре вилладж": "resident evil village",
-    "ре3": "resident evil 3", "резидент ивел 3": "resident evil 3", "резидент 3": "resident evil 3",
-    "девил мэй край": "devil may cry", "дмс": "devil may cry", "дмк": "devil may cry",
-    "девил мей край 5": "devil may cry 5", "дмк 5": "devil may cry 5", "дмс 5": "devil may cry 5",
-    "монстер хантер": "monster hunter", "мх": "monster hunter", "монстер хантер ворлд": "monster hunter world",
-    "мх ворлд": "monster hunter world", "монстер хантер райз": "monster hunter rise", "мх райз": "monster hunter rise",
-    "монстер хантер вайлдс": "monster hunter wilds", "мх вайлдс": "monster hunter wilds",
-    "драгонс догма": "dragon's dogma", "драгон догма 2": "dragon's dogma 2", "дд2": "dragon's dogma 2",
-    "онимьюша": "onimusha", "онемуша": "onimusha", "асура": "asura's wrath",
-    "стрит файтер": "street fighter", "сф": "street fighter", "стрит файтер 6": "street fighter 6",
-    "стф 6": "street fighter 6", "теккен": "tekken", "теккен 8": "tekken 8", "т8": "tekken 8",
-    "соулкалибур": "soulcalibur", "соул калибур": "soulcalibur", "мортал комбат": "mortal kombat",
-    "мк": "mortal kombat", "мк1": "mortal kombat 1", "мк 11": "mortal kombat 11", "мортал 11": "mortal kombat 11",
-    "мортал комбат 1": "mortal kombat 1", "инджастис": "injustice", "инджастис 2": "injustice 2",
-    "финал фэнтези": "final fantasy", "фф": "final fantasy", "финалка": "final fantasy",
-    "фф7": "final fantasy 7", "финал фэнтези 7": "final fantasy 7", "фф7 ремейк": "final fantasy 7 remake",
-    "фф7 ребёрс": "final fantasy 7 rebirth", "фф16": "final fantasy 16", "финал фэнтези 16": "final fantasy 16",
-    "фф14": "final fantasy 14", "фф15": "final fantasy 15", "фф10": "final fantasy 10",
-    "кингдом хартс": "kingdom hearts", "кх": "kingdom hearts", "кингдом хартс 3": "kingdom hearts 3",
-    "драгон квест": "dragon quest", "дк": "dragon quest", "драгон квест 11": "dragon quest 11",
-    "ниер": "nier", "ниер автомата": "nier automata", "нир автомата": "nier automata",
-    "ниер репликант": "nier replicant", "нир репликант": "nier replicant",
-    "драгон квест билдерс": "dragon quest builders", "октопат": "octopath traveler",
-    "октопат 2": "octopath traveler 2", "триангл": "triangle strategy", "бравелли": "bravely default",
-    "паразит ив": "parasite eve", "кронос": "chrono trigger", "хроно": "chrono trigger",
-    "дарк соулс ремастер": "dark souls remastered", "дср": "dark souls remastered",
-    "элден ринг шэдоу": "elden ring shadow of the erdtree", "эрдтри": "elden ring shadow of the erdtree",
-    "арморд кор 6": "armored core 6", "ас6": "armored core 6", "аc6": "armored core 6",
-    "теккен 7": "tekken 7", "т7": "tekken 7", "соул калибур 6": "soulcalibur 6", "ск6": "soulcalibur 6",
-    "наруто": "naruto", "наруто шиппуден": "naruto shippuden", "наруто ултимейт": "naruto ultimate ninja storm",
-    "ултимейт ниндзя шторм": "naruto ultimate ninja storm", "ултимейт ниндзя сторм": "naruto ultimate ninja storm",
-    "джамп форс": "jump force", "дрэгон бол": "dragon ball", "дрэгон болл": "dragon ball",
-    "драгон бол": "dragon ball", "драгонбол": "dragon ball", "дбз": "dragon ball z",
-    "драгон болл з": "dragon ball z", "какарот": "dragon ball z kakarot",
-    "драгон болл файтерз": "dragon ball fighterz", "дбфз": "dragon ball fighterz",
-    "ван пис": "one piece", "уан пис": "one piece", "уанпис": "one piece",
-    "соник 2": "sonic 2", "соник адвенчер": "sonic adventure", "соник мэния": "sonic mania",
-    "соник суперстарз": "sonic superstars", "соник и сотс": "sonic and the secret rings",
-    "якудза 6": "yakuza 6", "якудза 7": "yakuza 7", "якудза кивами": "yakuza kiwami",
-    "якудза кивами 2": "yakuza kiwami 2", "исчин": "yakuza ishin",
-    "лост джаджмент": "lost judgment", "like a dragon gaiden": "like a dragon gaiden",
-    "лайк э драгон гайден": "like a dragon gaiden", "лайк э драгон инфинит": "like a dragon infinite wealth",
-    "сталкрафт 2": "starcraft 2", "ст2": "starcraft 2", "старкрафт 2": "starcraft 2",
-    "варкрафт 3": "warcraft 3", "вк3": "warcraft 3", "варкрафт 2": "warcraft 2",
-    "ворлд оф варкрафт": "world of warcraft", "вов": "world of warcraft", "вов классик": "wow classic",
-    "диабло": "diablo", "диабло 2": "diablo 2", "диабло 3": "diablo 3", "диабло 4": "diablo 4", "д3": "diablo 3",
-    "д4": "diablo 4", "диабло 2 резурректед": "diablo 2 resurrected", "д2р": "diablo 2 resurrected",
-    "овервотч классик": "overwatch classic", "пат оф экзайл": "path of exile", "поэ": "path of exile",
-    "поэ 2": "path of exile 2", "пат оф экзайл 2": "path of exile 2", "грим давн": "grim dawn",
-    "титан квест": "titan quest", "титан квест 2": "titan quest 2", "торчлайт": "torchlight",
-    "аге оф эмпайрс": "age of empires", "аое": "age of empires", "аге оф эмпайрс 2": "age of empires 2",
-    "аое 2": "age of empires 2", "аге оф эмпайрс 4": "age of empires 4", "аое 4": "age of empires 4",
-    "комманд энд конкер": "command and conquer", "кнк": "command and conquer", "ред алерт": "red alert",
-    "ред алерт 2": "red alert 2", "ра2": "red alert 2", "тиберриум": "tiberium",
-    "анно": "anno", "anno 1800": "anno 1800", "анно 1800": "anno 1800", "анно 2070": "anno 2070",
-    "ситис скаяйнс": "cities skylines", "сити скаяйнс": "cities skylines", "ситис 2": "cities skylines 2",
-    "симс": "the sims", "симс 4": "the sims 4", "симс 5": "the sims 5", "симс 3": "the sims 3",
-    "планет костер": "planet coaster", "планет коустер": "planet coaster", "планет зоо": "planet zoo",
-    "фростпанк": "frostpunk", "фростпанк 2": "frostpunk 2", "тропико": "tropico", "тропико 6": "tropico 6",
-    "сурвайвинг марс": "surviving mars", "сурвайвинг": "surviving mars",
-    "энной": "anno", "факторио": "factorio", "факторио 2": "factorio 2", "сатисфактори": "satisfactory",
-    "рифтвorld": "riftworld", "рифтворлд": "riftworld", "валхейм": "valheim", "валхейм 2": "valheim 2",
-    "раст": "rust", "раст 2": "rust 2", "арк": "ark survival evolved", "арк сурвайвал": "ark survival evolved",
-    "арк 2": "ark 2", "палворлд": "palworld", "пал ворлд": "palworld", "эншраудед": "enshrouded",
-    "дед бай дейлайт": "dead by daylight", "дбд": "dead by daylight", "дед бай": "dead by daylight",
-    "фрайдей 13": "friday the 13th", "фрайдэй": "friday the 13th", "лефт фор дед": "left 4 dead",
-    "л4д": "left 4 dead", "лефт фор дед 2": "left 4 dead 2", "л4д2": "left 4 dead 2",
-    "бэк 4 блад": "back 4 blood", "бэк фор блад": "back 4 blood", "б4б": "back 4 blood",
-    "верминтайд": "vermintide", "верминтайд 2": "vermintide 2", "дарктайд": "darktide",
-    "дип рок": "deep rock galactic", "дрг": "deep rock galactic", "хеллдайверс": "helldivers",
-    "хеллдайверс 2": "helldivers 2", "хд2": "helldivers 2", "хеллдавэрс": "helldivers",
-    "гта онлайн": "gta online", "гтао": "gta online", "рдр онлайн": "red dead online", "рдо": "red dead online",
-    "зе форест": "the forest", "сонс оф зе форест": "sons of the forest",
-    "соны фореста": "sons of the forest", "грин хелл": "green hell", "гринхелл": "green hell",
-    "сабнавтика": "subnautica", "сабнотика": "subnautica", "сабнавтика 2": "subnautica 2",
-    "сабнавтика бз": "subnautica below zero", "белоу зиро": "subnautica below zero",
-    "ноу мэнс скай": "no man's sky", "номанс скай": "no man's sky", "номанскай": "no man's sky",
-    "стардев вэлли": "stardew valley", "стардью": "stardew valley", "стардью вэлли": "stardew valley",
-    "анимал кроссинг нью хорайзонс": "animal crossing new horizons", "аснх": "animal crossing new horizons",
-    "гравити фоллс": "gravity falls", "гравити": "gravity falls", "хадес": "hades", "хадес 2": "hades 2",
-    "дед селс": "dead cells", "дед селлс": "dead cells", "скул": "skul", "скул зе хироу": "skul the hero slayer",
-    "инскрипшн": "inscryption", "инскрипшен": "inscryption", "слэй зе спайр": "slay the spire",
-    "слэй": "slay the spire", "балатро": "balatro", "вампир сурвайворс": "vampire survivors",
-    "вампир сурвайвор": "vampire survivors", "бротато": "brotato",
-    "майнкрафт 2": "minecraft 2", "майнкрафт данженс": "minecraft dungeons", "майн данженс": "minecraft dungeons",
-    "майнкрафт легендс": "minecraft legends", "майн легендс": "minecraft legends",
-    "роблокс": "roblox", "роблокс 2": "roblox 2", "роблокс студио": "roblox studio",
-    "фортнайт": "fortnite", "форточка": "fortnite", "фортнайт 2": "fortnite 2",
-    "апекс легенд": "apex legends", "колда варзона": "call of duty warzone",
-}
+rem === Функция словаря синонимов ===
+:get_synonym
+set "KEY=%~1"
+set "KEY=%KEY: = %"
+set "ALT="
 
+for %%K in ("!KEY!") do (
+    set "K=%%~K"
+    if /i "!K!"=="ведьмак" set "ALT=witcher"
+    if /i "!K!"=="паук" set "ALT=spider"
+    if /i "!K!"=="гта" set "ALT=grand theft auto"
+    if /i "!K!"=="gta" set "ALT=grand theft auto"
+    if /i "!K!"=="ведьмак 3" set "ALT=witcher 3"
+    if /i "!K!"=="скайрим" set "ALT=skyrim"
+    if /i "!K!"=="дум" set "ALT=doom"
+    if /i "!K!"=="мортал" set "ALT=mortal kombat"
+    if /i "!K!"=="резидент" set "ALT=resident evil"
+    if /i "!K!"=="обитель" set "ALT=resident evil"
+    if /i "!K!"=="томб райдер" set "ALT=tomb raider"
+    if /i "!K!"=="дайинг" set "ALT=dying light"
+    if /i "!K!"=="киберпанк" set "ALT=cyberpunk"
+    if /i "!K!"=="хогвартс" set "ALT=hogwarts"
+    if /i "!K!"=="бог войны" set "ALT=god of war"
+    if /i "!K!"=="год оф вар" set "ALT=god of war"
+    if /i "!K!"=="человек паук" set "ALT=spider-man"
+    if /i "!K!"=="последний из нас" set "ALT=last of us"
+    if /i "!K!"=="ласт оф ас" set "ALT=last of us"
+    if /i "!K!"=="мафия" set "ALT=mafia"
+    if /i "!K!"=="душа" set "ALT=souls"
+    if /i "!K!"=="елден" set "ALT=elden ring"
+    if /i "!K!"=="элден" set "ALT=elden ring"
+    if /i "!K!"=="кольцо" set "ALT=elden ring"
+    if /i "!K!"=="сталкер" set "ALT=S.T.A.L.K.E.R"
+    if /i "!K!"=="метро" set "ALT=metro"
+    if /i "!K!"=="фоллаут" set "ALT=fallout"
+    if /i "!K!"=="фаллаут" set "ALT=fallout"
+    if /i "!K!"=="ассасин" set "ALT=assassin"
+    if /i "!K!"=="крид" set "ALT=creed"
+    if /i "!K!"=="фар край" set "ALT=far cry"
+    if /i "!K!"=="фаркрай" set "ALT=far cry"
+    if /i "!K!"=="батлфилд" set "ALT=battlefield"
+    if /i "!K!"=="колда" set "ALT=call of duty"
+    if /i "!K!"=="кол оф дьюти" set "ALT=call of duty"
+    if /i "!K!"=="фифа" set "ALT=fc"
+    if /i "!K!"=="фифа 25" set "ALT=fc 25"
+    if /i "!K!"=="еа фк" set "ALT=fc 25"
+    if /i "!K!"=="форза" set "ALT=forza"
+    if /i "!K!"=="хорайзон" set "ALT=horizon"
+    if /i "!K!"=="зелда" set "ALT=zelda"
+    if /i "!K!"=="марио" set "ALT=mario"
+    if /i "!K!"=="сонс оф форест" set "ALT=sons of the forest"
+    if /i "!K!"=="форест" set "ALT=the forest"
+    if /i "!K!"=="лес" set "ALT=the forest"
+    if /i "!K!"=="рафт" set "ALT=raft"
+    if /i "!K!"=="портал" set "ALT=portal"
+    if /i "!K!"=="майнкрафт" set "ALT=minecraft"
+    if /i "!K!"=="террария" set "ALT=terraria"
+    if /i "!K!"=="тетрис" set "ALT=tetris"
+    if /i "!K!"=="варкрафт" set "ALT=warcraft"
+    if /i "!K!"=="старкрафт" set "ALT=starcraft"
+    if /i "!K!"=="ведьмак дикая охота" set "ALT=witcher 3 wild hunt"
+    if /i "!K!"=="киберпанк 2077" set "ALT=cyberpunk 2077"
+    if /i "!K!"=="данганронпа" set "ALT=danganronpa"
+    if /i "!K!"=="данганронпа 2" set "ALT=danganronpa 2"
+    if /i "!K!"=="данганронпа v3" set "ALT=danganronpa v3"
+    if /i "!K!"=="данганронпа 3" set "ALT=danganronpa v3"
+    if /i "!K!"=="данга" set "ALT=danganronpa"
+    if /i "!K!"=="дарк соулс" set "ALT=dark souls"
+    if /i "!K!"=="дарк соулз" set "ALT=dark souls"
+    if /i "!K!"=="дарк соулс 3" set "ALT=dark souls 3"
+    if /i "!K!"=="дарк соулс 2" set "ALT=dark souls 2"
+    if /i "!K!"=="дс" set "ALT=dark souls"
+    if /i "!K!"=="дс3" set "ALT=dark souls 3"
+    if /i "!K!"=="секиро" set "ALT=sekiro"
+    if /i "!K!"=="бладборн" set "ALT=bloodborne"
+    if /i "!K!"=="армор кор" set "ALT=armored core"
+    if /i "!K!"=="армор кор 6" set "ALT=armored core 6"
+    if /i "!K!"=="нио" set "ALT=nioh"
+    if /i "!K!"=="нио 2" set "ALT=nioh 2"
+    if /i "!K!"=="лайс оф пи" set "ALT=lies of p"
+    if /i "!K!"=="лордс оф зе фоллен" set "ALT=lords of the fallen"
+    if /i "!K!"=="гта 5" set "ALT=gta 5"
+    if /i "!K!"=="гта5" set "ALT=gta 5"
+    if /i "!K!"=="гта 6" set "ALT=gta 6"
+    if /i "!K!"=="гта 4" set "ALT=gta 4"
+    if /i "!K!"=="гта сан" set "ALT=gta san andreas"
+    if /i "!K!"=="сан андреас" set "ALT=gta san andreas"
+    if /i "!K!"=="рдр" set "ALT=red dead redemption"
+    if /i "!K!"=="рдр 2" set "ALT=red dead redemption 2"
+    if /i "!K!"=="ред дед" set "ALT=red dead redemption"
+    if /i "!K!"=="ред дед 2" set "ALT=red dead redemption 2"
+    if /i "!K!"=="мафия 2" set "ALT=mafia 2"
+    if /i "!K!"=="мафия 3" set "ALT=mafia 3"
+    if /i "!K!"=="мафия 1" set "ALT=mafia definitive edition"
+    if /i "!K!"=="буллы" set "ALT=bully"
+    if /i "!K!"=="ла нойр" set "ALT=l.a. noire"
+    if /i "!K!"=="обливион" set "ALT=oblivion"
+    if /i "!K!"=="морровинд" set "ALT=morrowind"
+    if /i "!K!"=="фоллаут 4" set "ALT=fallout 4"
+    if /i "!K!"=="фоллаут 3" set "ALT=fallout 3"
+    if /i "!K!"=="фоллаут 76" set "ALT=fallout 76"
+    if /i "!K!"=="фоллаут нью вегас" set "ALT=fallout new vegas"
+    if /i "!K!"=="нью вегас" set "ALT=fallout new vegas"
+    if /i "!K!"=="старфилд" set "ALT=starfield"
+    if /i "!K!"=="дум 2016" set "ALT=doom 2016"
+    if /i "!K!"=="дум этернал" set "ALT=doom eternal"
+    if /i "!K!"=="дум 3" set "ALT=doom 3"
+    if /i "!K!"=="квикс" set "ALT=quake"
+    if /i "!K!"=="вольфенштейн" set "ALT=wolfenstein"
+    if /i "!K!"=="ассасин крид" set "ALT=assassins creed"
+    if /i "!K!"=="ассасин 2" set "ALT=assassins creed 2"
+    if /i "!K!"=="ассасин 4" set "ALT=assassins creed 4"
+    if /i "!K!"=="ассасин блэк флаг" set "ALT=assassins creed black flag"
+    if /i "!K!"=="ассасин вальгалла" set "ALT=assassins creed valhalla"
+    if /i "!K!"=="вальгалла" set "ALT=assassins creed valhalla"
+    if /i "!K!"=="ассасин ориджинс" set "ALT=assassins creed origins"
+    if /i "!K!"=="ориджинс" set "ALT=assassins creed origins"
+    if /i "!K!"=="ассасин одессей" set "ALT=assassins creed odyssey"
+    if /i "!K!"=="одессей" set "ALT=assassins creed odyssey"
+    if /i "!K!"=="ассасин мираж" set "ALT=assassins creed mirage"
+    if /i "!K!"=="миража" set "ALT=assassins creed mirage"
+    if /i "!K!"=="фар край 3" set "ALT=far cry 3"
+    if /i "!K!"=="фар край 4" set "ALT=far cry 4"
+    if /i "!K!"=="фар край 5" set "ALT=far cry 5"
+    if /i "!K!"=="фар край 6" set "ALT=far cry 6"
+    if /i "!K!"=="примал" set "ALT=far cry primal"
+    if /i "!K!"=="фар край нью давн" set "ALT=far cry new dawn"
+    if /i "!K!"=="дивижн" set "ALT=the division"
+    if /i "!K!"=="дивижн 2" set "ALT=the division 2"
+    if /i "!K!"=="рэйнбоу сикс" set "ALT=rainbow six"
+    if /i "!K!"=="р6" set "ALT=rainbow six siege"
+    if /i "!K!"=="рэйнбоу сикс сидж" set "ALT=rainbow six siege"
+    if /i "!K!"=="принс оф персия" set "ALT=prince of persia"
+    if /i "!K!"=="принц персии" set "ALT=prince of persia"
+    if /i "!K!"=="сплинтер селл" set "ALT=splinter cell"
+    if /i "!K!"=="сплинтер" set "ALT=splinter cell"
+    if /i "!K!"=="варч" set "ALT=watch dogs"
+    if /i "!K!"=="вотч догс" set "ALT=watch dogs"
+    if /i "!K!"=="вотч догс 2" set "ALT=watch dogs 2"
+    if /i "!K!"=="вотч догс лиджн" set "ALT=watch dogs legion"
+    if /i "!K!"=="легион" set "ALT=watch dogs legion"
+    if /i "!K!"=="фор хонор" set "ALT=for honor"
+    if /i "!K!"=="гоуст рикон" set "ALT=ghost recon"
+    if /i "!K!"=="гоуст рекон" set "ALT=ghost recon"
+    if /i "!K!"=="тхе крю" set "ALT=the crew"
+    if /i "!K!"=="трекмания" set "ALT=trackmania"
+    if /i "!K!"=="райман" set "ALT=rayman"
+    if /i "!K!"=="колда мв2" set "ALT=call of duty mw2"
+    if /i "!K!"=="мв2" set "ALT=call of duty mw2"
+    if /i "!K!"=="мв3" set "ALT=call of duty mw3"
+    if /i "!K!"=="варзона" set "ALT=call of duty warzone"
+    if /i "!K!"=="варзоне" set "ALT=call of duty warzone"
+    if /i "!K!"=="код" set "ALT=call of duty"
+    if /i "!K!"=="батла" set "ALT=battlefield"
+    if /i "!K!"=="батлфилд 1" set "ALT=battlefield 1"
+    if /i "!K!"=="батлфилд 4" set "ALT=battlefield 4"
+    if /i "!K!"=="батлфилд 2042" set "ALT=battlefield 2042"
+    if /i "!K!"=="бф4" set "ALT=battlefield 4"
+    if /i "!K!"=="апекс" set "ALT=apex legends"
+    if /i "!K!"=="апекс легендс" set "ALT=apex legends"
+    if /i "!K!"=="титанфолл" set "ALT=titanfall"
+    if /i "!K!"=="титанфолл 2" set "ALT=titanfall 2"
+    if /i "!K!"=="дестини" set "ALT=destiny"
+    if /i "!K!"=="дестини 2" set "ALT=destiny 2"
+    if /i "!K!"=="овервотч" set "ALT=overwatch"
+    if /i "!K!"=="овервоч" set "ALT=overwatch"
+    if /i "!K!"=="оверватч" set "ALT=overwatch"
+    if /i "!K!"=="ов" set "ALT=overwatch"
+    if /i "!K!"=="ов 2" set "ALT=overwatch 2"
+    if /i "!K!"=="овервотч 2" set "ALT=overwatch 2"
+    if /i "!K!"=="паладинс" set "ALT=paladins"
+    if /i "!K!"=="валорант" set "ALT=valorant"
+    if /i "!K!"=="кске" set "ALT=cs2"
+    if /i "!K!"=="кс 2" set "ALT=cs2"
+    if /i "!K!"=="кс го" set "ALT=csgo"
+    if /i "!K!"=="ксго" set "ALT=csgo"
+    if /i "!K!"=="контра" set "ALT=counter-strike"
+    if /i "!K!"=="контер страйк" set "ALT=counter-strike"
+    if /i "!K!"=="р6с" set "ALT=rainbow six siege"
+    if /i "!K!"=="хитмен" set "ALT=hitman"
+    if /i "!K!"=="хитман 3" set "ALT=hitman 3"
+    if /i "!K!"=="фифа 24" set "ALT=fc 24"
+    if /i "!K!"=="фифа 23" set "ALT=fifa 23"
+    if /i "!K!"=="фифа 22" set "ALT=fifa 22"
+    if /i "!K!"=="фифа 21" set "ALT=fifa 21"
+    if /i "!K!"=="фк 24" set "ALT=fc 24"
+    if /i "!K!"=="фк 25" set "ALT=fc 25"
+    if /i "!K!"=="еа фк 25" set "ALT=fc 25"
+    if /i "!K!"=="нхл" set "ALT=nhl"
+    if /i "!K!"=="нба" set "ALT=nba 2k"
+    if /i "!K!"=="нба 2к" set "ALT=nba 2k"
+    if /i "!K!"=="мадден" set "ALT=madden"
+    if /i "!K!"=="уефа" set "ALT=uefa"
+    if /i "!K!"=="ф1" set "ALT=f1"
+    if /i "!K!"=="ф1 24" set "ALT=f1 24"
+    if /i "!K!"=="скайфолл" set "ALT=skyfall"
+    if /i "!K!"=="нид фор спид" set "ALT=need for speed"
+    if /i "!K!"=="нфс" set "ALT=need for speed"
+    if /i "!K!"=="нид фор спид мост вантед" set "ALT=need for speed most wanted"
+    if /i "!K!"=="мост вантед" set "ALT=need for speed most wanted"
+    if /i "!K!"=="нид фор спид хит" set "ALT=need for speed heat"
+    if /i "!K!"=="хит нфс" set "ALT=need for speed heat"
+    if /i "!K!"=="анбаунд" set "ALT=need for speed unbound"
+    if /i "!K!"=="нфс анбаунд" set "ALT=need for speed unbound"
+    if /i "!K!"=="биошок" set "ALT=bioshock"
+    if /i "!K!"=="биошок 2" set "ALT=bioshock 2"
+    if /i "!K!"=="биошок инфинити" set "ALT=bioshock infinite"
+    if /i "!K!"=="бордерлендс" set "ALT=borderlands"
+    if /i "!K!"=="бордерлендс 2" set "ALT=borderlands 2"
+    if /i "!K!"=="бордерлендс 3" set "ALT=borderlands 3"
+    if /i "!K!"=="блур" set "ALT=borderlands"
+    if /i "!K!"=="сивилизейшн" set "ALT=civilization"
+    if /i "!K!"=="цива" set "ALT=civilization"
+    if /i "!K!"=="цивилизация" set "ALT=civilization"
+    if /i "!K!"=="цив 6" set "ALT=civilization 6"
+    if /i "!K!"=="цива 6" set "ALT=civilization 6"
+    if /i "!K!"=="ксеком" set "ALT=xcom"
+    if /i "!K!"=="ксеном" set "ALT=xcom"
+    if /i "!K!"=="ксеном 2" set "ALT=xcom 2"
+    if /i "!K!"=="мафия дефинитив" set "ALT=mafia definitive edition"
+    if /i "!K!"=="персона" set "ALT=persona"
+    if /i "!K!"=="персона 5" set "ALT=persona 5"
+    if /i "!K!"=="персона 4" set "ALT=persona 4"
+    if /i "!K!"=="персона 3" set "ALT=persona 3"
+    if /i "!K!"=="персона 5 роял" set "ALT=persona 5 royal"
+    if /i "!K!"=="п5р" set "ALT=persona 5 royal"
+    if /i "!K!"=="п5" set "ALT=persona 5"
+    if /i "!K!"=="соул хакерс" set "ALT=soul hackers"
+    if /i "!K!"=="шх2" set "ALT=soul hackers 2"
+    if /i "!K!"=="метафор" set "ALT=metaphor refantazio"
+    if /i "!K!"=="метафора" set "ALT=metaphor refantazio"
+    if /i "!K!"=="катсураги" set "ALT=catherine"
+    if /i "!K!"=="кетрин" set "ALT=catherine"
+    if /i "!K!"=="ярн" set "ALT=yakuza"
+    if /i "!K!"=="якудза" set "ALT=yakuza"
+    if /i "!K!"=="якудза 0" set "ALT=yakuza 0"
+    if /i "!K!"=="якудза лайк э драгон" set "ALT=yakuza like a dragon"
+    if /i "!K!"=="лайк э драгон" set "ALT=yakuza like a dragon"
+    if /i "!K!"=="джаджмент" set "ALT=judgment"
+    if /i "!K!"=="лондон" set "ALT=yakuza"
+    if /i "!K!"=="соник" set "ALT=sonic"
+    if /i "!K!"=="соник фронтьерс" set "ALT=sonic frontiers"
+    if /i "!K!"=="тотал вар" set "ALT=total war"
+    if /i "!K!"=="тотал вор" set "ALT=total war"
+    if /i "!K!"=="тотал вар вархаммер" set "ALT=total war warhammer"
+    if /i "!K!"=="тв вархаммер" set "ALT=total war warhammer"
+    if /i "!K!"=="футбал менеджер" set "ALT=football manager"
+    if /i "!K!"=="фм" set "ALT=football manager"
+    if /i "!K!"=="зельда ботв" set "ALT=zelda breath of the wild"
+    if /i "!K!"=="ботв" set "ALT=zelda breath of the wild"
+    if /i "!K!"=="тотк" set "ALT=zelda tears of the kingdom"
+    if /i "!K!"=="тиарс оф зе киндом" set "ALT=zelda tears of the kingdom"
+    if /i "!K!"=="марио карт" set "ALT=mario kart"
+    if /i "!K!"=="марио карт 8" set "ALT=mario kart 8"
+    if /i "!K!"=="марио оддиси" set "ALT=mario odyssey"
+    if /i "!K!"=="супер марио" set "ALT=super mario"
+    if /i "!K!"=="супер марио брос" set "ALT=super mario bros"
+    if /i "!K!"=="смб" set "ALT=super mario bros"
+    if /i "!K!"=="покемон" set "ALT=pokemon"
+    if /i "!K!"=="покемоны" set "ALT=pokemon"
+    if /i "!K!"=="покемон го" set "ALT=pokemon go"
+    if /i "!K!"=="свитч" set "ALT=switch"
+    if /i "!K!"=="ниндтендо" set "ALT=nintendo"
+    if /i "!K!"=="нинтендо" set "ALT=nintendo"
+    if /i "!K!"=="свич" set "ALT=switch"
+    if /i "!K!"=="сплэтун" set "ALT=splatoon"
+    if /i "!K!"=="сплатун" set "ALT=splatoon"
+    if /i "!K!"=="метроид" set "ALT=metroid"
+    if /i "!K!"=="метроид дред" set "ALT=metroid dread"
+    if /i "!K!"=="кирби" set "ALT=kirby"
+    if /i "!K!"=="донки конг" set "ALT=donkey kong"
+    if /i "!K!"=="энимал кроссинг" set "ALT=animal crossing"
+    if /i "!K!"=="анимал кроссинг" set "ALT=animal crossing"
+    if /i "!K!"=="энимал кросинг" set "ALT=animal crossing"
+    if /i "!K!"=="анчартед" set "ALT=uncharted"
+    if /i "!K!"=="анчартед 4" set "ALT=uncharted 4"
+    if /i "!K!"=="анчартед 2" set "ALT=uncharted 2"
+    if /i "!K!"=="анч" set "ALT=uncharted"
+    if /i "!K!"=="бог войны 2018" set "ALT=god of war 2018"
+    if /i "!K!"=="год оф вар рагнарок" set "ALT=god of war ragnarok"
+    if /i "!K!"=="рагнарек" set "ALT=god of war ragnarok"
+    if /i "!K!"=="рагнарок" set "ALT=god of war ragnarok"
+    if /i "!K!"=="год оф вар 3" set "ALT=god of war 3"
+    if /i "!K!"=="год 3" set "ALT=god of war 3"
+    if /i "!K!"=="хорайзон зеро давн" set "ALT=horizon zero dawn"
+    if /i "!K!"=="хорайзон 2" set "ALT=horizon forbidden west"
+    if /i "!K!"=="запретный запад" set "ALT=horizon forbidden west"
+    if /i "!K!"=="хорайзон форбидден вест" set "ALT=horizon forbidden west"
+    if /i "!K!"=="ласт оф ас 2" set "ALT=last of us 2"
+    if /i "!K!"=="ласт оф ас парт 2" set "ALT=last of us part 2"
+    if /i "!K!"=="лоу 2" set "ALT=last of us 2"
+    if /i "!K!"=="ласт оф ас 1" set "ALT=last of us part 1"
+    if /i "!K!"=="ласт оф ас ремейк" set "ALT=last of us part 1"
+    if /i "!K!"=="гоуст оф цушима" set "ALT=ghost of tsushima"
+    if /i "!K!"=="гоуст" set "ALT=ghost of tsushima"
+    if /i "!K!"=="цусима" set "ALT=ghost of tsushima"
+    if /i "!K!"=="гоуст оф цусима" set "ALT=ghost of tsushima"
+    if /i "!K!"=="спайдермен" set "ALT=spider-man"
+    if /i "!K!"=="спайдер мен" set "ALT=spider-man"
+    if /i "!K!"=="человек паук 2" set "ALT=spider-man 2"
+    if /i "!K!"=="спайдермен 2" set "ALT=spider-man 2"
+    if /i "!K!"=="человек-паук 2" set "ALT=spider-man 2"
+    if /i "!K!"=="майлз моралес" set "ALT=spider-man miles morales"
+    if /i "!K!"=="майлз" set "ALT=spider-man miles morales"
+    if /i "!K!"=="ратчет и кланк" set "ALT=ratchet and clank"
+    if /i "!K!"=="ратчет" set "ALT=ratchet and clank"
+    if /i "!K!"=="бладборн 2" set "ALT=bloodborne 2"
+    if /i "!K!"=="ретурнал" set "ALT=returnal"
+    if /i "!K!"=="демонс соулс" set "ALT=demons souls"
+    if /i "!K!"=="демон соулс" set "ALT=demons souls"
+    if /i "!K!"=="сайлент хилл" set "ALT=silent hill"
+    if /i "!K!"=="сайлент хилл 2" set "ALT=silent hill 2"
+    if /i "!K!"=="дес стрендинг" set "ALT=death stranding"
+    if /i "!K!"=="дес стрендинг 2" set "ALT=death stranding 2"
+    if /i "!K!"=="дс2" set "ALT=death stranding 2"
+    if /i "!K!"=="дэйс ган" set "ALT=days gone"
+    if /i "!K!"=="дейс ган" set "ALT=days gone"
+    if /i "!K!"=="инфэмос" set "ALT=infamous"
+    if /i "!K!"=="инфамос" set "ALT=infamous"
+    if /i "!K!"=="киллзоун" set "ALT=killzone"
+    if /i "!K!"=="гран туризмо" set "ALT=gran turismo"
+    if /i "!K!"=="гт" set "ALT=gran turismo"
+    if /i "!K!"=="гт7" set "ALT=gran turismo 7"
+    if /i "!K!"=="резидент ивел" set "ALT=resident evil"
+    if /i "!K!"=="резидент ивел 2" set "ALT=resident evil 2"
+    if /i "!K!"=="ре2" set "ALT=resident evil 2"
+    if /i "!K!"=="резидент ивел 4" set "ALT=resident evil 4"
+    if /i "!K!"=="ре4" set "ALT=resident evil 4"
+    if /i "!K!"=="резидент 4" set "ALT=resident evil 4"
+    if /i "!K!"=="резидент ивел 7" set "ALT=resident evil 7"
+    if /i "!K!"=="ре7" set "ALT=resident evil 7"
+    if /i "!K!"=="резидент 7" set "ALT=resident evil 7"
+    if /i "!K!"=="резидент ивел вилладж" set "ALT=resident evil village"
+    if /i "!K!"=="вилладж" set "ALT=resident evil village"
+    if /i "!K!"=="ре вилладж" set "ALT=resident evil village"
+    if /i "!K!"=="ре3" set "ALT=resident evil 3"
+    if /i "!K!"=="резидент ивел 3" set "ALT=resident evil 3"
+    if /i "!K!"=="резидент 3" set "ALT=resident evil 3"
+    if /i "!K!"=="девил мэй край" set "ALT=devil may cry"
+    if /i "!K!"=="дмс" set "ALT=devil may cry"
+    if /i "!K!"=="дмк" set "ALT=devil may cry"
+    if /i "!K!"=="девил мей край 5" set "ALT=devil may cry 5"
+    if /i "!K!"=="дмк 5" set "ALT=devil may cry 5"
+    if /i "!K!"=="дмс 5" set "ALT=devil may cry 5"
+    if /i "!K!"=="монстер хантер" set "ALT=monster hunter"
+    if /i "!K!"=="мх" set "ALT=monster hunter"
+    if /i "!K!"=="монстер хантер ворлд" set "ALT=monster hunter world"
+    if /i "!K!"=="мх ворлд" set "ALT=monster hunter world"
+    if /i "!K!"=="монстер хантер райз" set "ALT=monster hunter rise"
+    if /i "!K!"=="мх райз" set "ALT=monster hunter rise"
+    if /i "!K!"=="монстер хантер вайлдс" set "ALT=monster hunter wilds"
+    if /i "!K!"=="мх вайлдс" set "ALT=monster hunter wilds"
+    if /i "!K!"=="драгонс догма" set "ALT=dragons dogma"
+    if /i "!K!"=="драгон догма 2" set "ALT=dragons dogma 2"
+    if /i "!K!"=="дд2" set "ALT=dragons dogma 2"
+    if /i "!K!"=="онимьюша" set "ALT=onimusha"
+    if /i "!K!"=="онемуша" set "ALT=onimusha"
+    if /i "!K!"=="асура" set "ALT=asuras wrath"
+    if /i "!K!"=="стрит файтер" set "ALT=street fighter"
+    if /i "!K!"=="сф" set "ALT=street fighter"
+    if /i "!K!"=="стрит файтер 6" set "ALT=street fighter 6"
+    if /i "!K!"=="стф 6" set "ALT=street fighter 6"
+    if /i "!K!"=="теккен" set "ALT=tekken"
+    if /i "!K!"=="теккен 8" set "ALT=tekken 8"
+    if /i "!K!"=="т8" set "ALT=tekken 8"
+    if /i "!K!"=="соулкалибур" set "ALT=soulcalibur"
+    if /i "!K!"=="соул калибур" set "ALT=soulcalibur"
+    if /i "!K!"=="мортал комбат" set "ALT=mortal kombat"
+    if /i "!K!"=="мк" set "ALT=mortal kombat"
+    if /i "!K!"=="мк1" set "ALT=mortal kombat 1"
+    if /i "!K!"=="мк 11" set "ALT=mortal kombat 11"
+    if /i "!K!"=="мортал 11" set "ALT=mortal kombat 11"
+    if /i "!K!"=="мортал комбат 1" set "ALT=mortal kombat 1"
+    if /i "!K!"=="инджастис" set "ALT=injustice"
+    if /i "!K!"=="инджастис 2" set "ALT=injustice 2"
+    if /i "!K!"=="финал фэнтези" set "ALT=final fantasy"
+    if /i "!K!"=="фф" set "ALT=final fantasy"
+    if /i "!K!"=="финалка" set "ALT=final fantasy"
+    if /i "!K!"=="фф7" set "ALT=final fantasy 7"
+    if /i "!K!"=="финал фэнтези 7" set "ALT=final fantasy 7"
+    if /i "!K!"=="фф7 ремейк" set "ALT=final fantasy 7 remake"
+    if /i "!K!"=="фф7 ребёрс" set "ALT=final fantasy 7 rebirth"
+    if /i "!K!"=="фф16" set "ALT=final fantasy 16"
+    if /i "!K!"=="финал фэнтези 16" set "ALT=final fantasy 16"
+    if /i "!K!"=="фф14" set "ALT=final fantasy 14"
+    if /i "!K!"=="фф15" set "ALT=final fantasy 15"
+    if /i "!K!"=="фф10" set "ALT=final fantasy 10"
+    if /i "!K!"=="кингдом хартс" set "ALT=kingdom hearts"
+    if /i "!K!"=="кх" set "ALT=kingdom hearts"
+    if /i "!K!"=="кингдом хартс 3" set "ALT=kingdom hearts 3"
+    if /i "!K!"=="драгон квест" set "ALT=dragon quest"
+    if /i "!K!"=="дк" set "ALT=dragon quest"
+    if /i "!K!"=="драгон квест 11" set "ALT=dragon quest 11"
+    if /i "!K!"=="ниер" set "ALT=nier"
+    if /i "!K!"=="ниер автомата" set "ALT=nier automata"
+    if /i "!K!"=="нир автомата" set "ALT=nier automata"
+    if /i "!K!"=="ниер репликант" set "ALT=nier replicant"
+    if /i "!K!"=="нир репликант" set "ALT=nier replicant"
+    if /i "!K!"=="драгон квест билдерс" set "ALT=dragon quest builders"
+    if /i "!K!"=="октопат" set "ALT=octopath traveler"
+    if /i "!K!"=="октопат 2" set "ALT=octopath traveler 2"
+    if /i "!K!"=="триангл" set "ALT=triangle strategy"
+    if /i "!K!"=="бравелли" set "ALT=bravely default"
+    if /i "!K!"=="паразит ив" set "ALT=parasite eve"
+    if /i "!K!"=="кронос" set "ALT=chrono trigger"
+    if /i "!K!"=="хроно" set "ALT=chrono trigger"
+    if /i "!K!"=="дарк соулс ремастер" set "ALT=dark souls remastered"
+    if /i "!K!"=="дср" set "ALT=dark souls remastered"
+    if /i "!K!"=="элден ринг шэдоу" set "ALT=elden ring shadow of the erdtree"
+    if /i "!K!"=="эрдтри" set "ALT=elden ring shadow of the erdtree"
+    if /i "!K!"=="арморд кор 6" set "ALT=armored core 6"
+    if /i "!K!"=="ас6" set "ALT=armored core 6"
+    if /i "!K!"=="аc6" set "ALT=armored core 6"
+    if /i "!K!"=="теккен 7" set "ALT=tekken 7"
+    if /i "!K!"=="т7" set "ALT=tekken 7"
+    if /i "!K!"=="соул калибур 6" set "ALT=soulcalibur 6"
+    if /i "!K!"=="ск6" set "ALT=soulcalibur 6"
+    if /i "!K!"=="наруто" set "ALT=naruto"
+    if /i "!K!"=="наруто шиппуден" set "ALT=naruto shippuden"
+    if /i "!K!"=="наруто ултимейт" set "ALT=naruto ultimate ninja storm"
+    if /i "!K!"=="ултимейт ниндзя шторм" set "ALT=naruto ultimate ninja storm"
+    if /i "!K!"=="ултимейт ниндзя сторм" set "ALT=naruto ultimate ninja storm"
+    if /i "!K!"=="джамп форс" set "ALT=jump force"
+    if /i "!K!"=="дрэгон бол" set "ALT=dragon ball"
+    if /i "!K!"=="дрэгон болл" set "ALT=dragon ball"
+    if /i "!K!"=="драгон бол" set "ALT=dragon ball"
+    if /i "!K!"=="драгонбол" set "ALT=dragon ball"
+    if /i "!K!"=="дбз" set "ALT=dragon ball z"
+    if /i "!K!"=="драгон болл з" set "ALT=dragon ball z"
+    if /i "!K!"=="какарот" set "ALT=dragon ball z kakarot"
+    if /i "!K!"=="драгон болл файтерз" set "ALT=dragon ball fighterz"
+    if /i "!K!"=="дбфз" set "ALT=dragon ball fighterz"
+    if /i "!K!"=="ван пис" set "ALT=one piece"
+    if /i "!K!"=="уан пис" set "ALT=one piece"
+    if /i "!K!"=="уанпис" set "ALT=one piece"
+    if /i "!K!"=="соник 2" set "ALT=sonic 2"
+    if /i "!K!"=="соник адвенчер" set "ALT=sonic adventure"
+    if /i "!K!"=="соник мэния" set "ALT=sonic mania"
+    if /i "!K!"=="соник суперстарз" set "ALT=sonic superstars"
+    if /i "!K!"=="соник и сотс" set "ALT=sonic and the secret rings"
+    if /i "!K!"=="якудза 6" set "ALT=yakuza 6"
+    if /i "!K!"=="якудза 7" set "ALT=yakuza 7"
+    if /i "!K!"=="якудза кивами" set "ALT=yakuza kiwami"
+    if /i "!K!"=="якудза кивами 2" set "ALT=yakuza kiwami 2"
+    if /i "!K!"=="исчин" set "ALT=yakuza ishin"
+    if /i "!K!"=="лост джаджмент" set "ALT=lost judgment"
+    if /i "!K!"=="like a dragon gaiden" set "ALT=like a dragon gaiden"
+    if /i "!K!"=="лайк э драгон гайден" set "ALT=like a dragon gaiden"
+    if /i "!K!"=="лайк э драгон инфинит" set "ALT=like a dragon infinite wealth"
+    if /i "!K!"=="сталкрафт 2" set "ALT=starcraft 2"
+    if /i "!K!"=="ст2" set "ALT=starcraft 2"
+    if /i "!K!"=="старкрафт 2" set "ALT=starcraft 2"
+    if /i "!K!"=="варкрафт 3" set "ALT=warcraft 3"
+    if /i "!K!"=="вк3" set "ALT=warcraft 3"
+    if /i "!K!"=="варкрафт 2" set "ALT=warcraft 2"
+    if /i "!K!"=="ворлд оф варкрафт" set "ALT=world of warcraft"
+    if /i "!K!"=="вов" set "ALT=world of warcraft"
+    if /i "!K!"=="вов классик" set "ALT=wow classic"
+    if /i "!K!"=="диабло" set "ALT=diablo"
+    if /i "!K!"=="диабло 2" set "ALT=diablo 2"
+    if /i "!K!"=="диабло 3" set "ALT=diablo 3"
+    if /i "!K!"=="диабло 4" set "ALT=diablo 4"
+    if /i "!K!"=="д3" set "ALT=diablo 3"
+    if /i "!K!"=="д4" set "ALT=diablo 4"
+    if /i "!K!"=="диабло 2 резурректед" set "ALT=diablo 2 resurrected"
+    if /i "!K!"=="д2р" set "ALT=diablo 2 resurrected"
+    if /i "!K!"=="овервотч классик" set "ALT=overwatch classic"
+    if /i "!K!"=="пат оф экзайл" set "ALT=path of exile"
+    if /i "!K!"=="поэ" set "ALT=path of exile"
+    if /i "!K!"=="поэ 2" set "ALT=path of exile 2"
+    if /i "!K!"=="пат оф экзайл 2" set "ALT=path of exile 2"
+    if /i "!K!"=="грим давн" set "ALT=grim dawn"
+    if /i "!K!"=="титан квест" set "ALT=titan quest"
+    if /i "!K!"=="титан квест 2" set "ALT=titan quest 2"
+    if /i "!K!"=="торчлайт" set "ALT=torchlight"
+    if /i "!K!"=="аге оф эмпайрс" set "ALT=age of empires"
+    if /i "!K!"=="аое" set "ALT=age of empires"
+    if /i "!K!"=="аге оф эмпайрс 2" set "ALT=age of empires 2"
+    if /i "!K!"=="аое 2" set "ALT=age of empires 2"
+    if /i "!K!"=="аге оф эмпайрс 4" set "ALT=age of empires 4"
+    if /i "!K!"=="аое 4" set "ALT=age of empires 4"
+    if /i "!K!"=="комманд энд конкер" set "ALT=command and conquer"
+    if /i "!K!"=="кнк" set "ALT=command and conquer"
+    if /i "!K!"=="ред алерт" set "ALT=red alert"
+    if /i "!K!"=="ред алерт 2" set "ALT=red alert 2"
+    if /i "!K!"=="ра2" set "ALT=red alert 2"
+    if /i "!K!"=="тиберриум" set "ALT=tiberium"
+    if /i "!K!"=="анно" set "ALT=anno"
+    if /i "!K!"=="anno 1800" set "ALT=anno 1800"
+    if /i "!K!"=="анно 1800" set "ALT=anno 1800"
+    if /i "!K!"=="анно 2070" set "ALT=anno 2070"
+    if /i "!K!"=="ситис скаяйнс" set "ALT=cities skylines"
+    if /i "!K!"=="сити скаяйнс" set "ALT=cities skylines"
+    if /i "!K!"=="ситис 2" set "ALT=cities skylines 2"
+    if /i "!K!"=="симс" set "ALT=the sims"
+    if /i "!K!"=="симс 4" set "ALT=the sims 4"
+    if /i "!K!"=="симс 5" set "ALT=the sims 5"
+    if /i "!K!"=="симс 3" set "ALT=the sims 3"
+    if /i "!K!"=="планет костер" set "ALT=planet coaster"
+    if /i "!K!"=="планет коустер" set "ALT=planet coaster"
+    if /i "!K!"=="планет зоо" set "ALT=planet zoo"
+    if /i "!K!"=="фростпанк" set "ALT=frostpunk"
+    if /i "!K!"=="фростпанк 2" set "ALT=frostpunk 2"
+    if /i "!K!"=="тропико" set "ALT=tropico"
+    if /i "!K!"=="тропико 6" set "ALT=tropico 6"
+    if /i "!K!"=="сурвайвинг марс" set "ALT=surviving mars"
+    if /i "!K!"=="сурвайвинг" set "ALT=surviving mars"
+    if /i "!K!"=="энной" set "ALT=anno"
+    if /i "!K!"=="факторио" set "ALT=factorio"
+    if /i "!K!"=="факторио 2" set "ALT=factorio 2"
+    if /i "!K!"=="сатисфактори" set "ALT=satisfactory"
+    if /i "!K!"=="рифтворлд" set "ALT=riftworld"
+    if /i "!K!"=="валхейм" set "ALT=valheim"
+    if /i "!K!"=="валхейм 2" set "ALT=valheim 2"
+    if /i "!K!"=="раст" set "ALT=rust"
+    if /i "!K!"=="раст 2" set "ALT=rust 2"
+    if /i "!K!"=="арк" set "ALT=ark survival evolved"
+    if /i "!K!"=="арк сурвайвал" set "ALT=ark survival evolved"
+    if /i "!K!"=="арк 2" set "ALT=ark 2"
+    if /i "!K!"=="палворлд" set "ALT=palworld"
+    if /i "!K!"=="пал ворлд" set "ALT=palworld"
+    if /i "!K!"=="эншраудед" set "ALT=enshrouded"
+    if /i "!K!"=="дед бай дейлайт" set "ALT=dead by daylight"
+    if /i "!K!"=="дбд" set "ALT=dead by daylight"
+    if /i "!K!"=="дед бай" set "ALT=dead by daylight"
+    if /i "!K!"=="фрайдей 13" set "ALT=friday the 13th"
+    if /i "!K!"=="фрайдэй" set "ALT=friday the 13th"
+    if /i "!K!"=="лефт фор дед" set "ALT=left 4 dead"
+    if /i "!K!"=="л4д" set "ALT=left 4 dead"
+    if /i "!K!"=="лефт фор дед 2" set "ALT=left 4 dead 2"
+    if /i "!K!"=="л4д2" set "ALT=left 4 dead 2"
+    if /i "!K!"=="бэк 4 блад" set "ALT=back 4 blood"
+    if /i "!K!"=="бэк фор блад" set "ALT=back 4 blood"
+    if /i "!K!"=="б4б" set "ALT=back 4 blood"
+    if /i "!K!"=="верминтайд" set "ALT=vermintide"
+    if /i "!K!"=="верминтайд 2" set "ALT=vermintide 2"
+    if /i "!K!"=="дарктайд" set "ALT=darktide"
+    if /i "!K!"=="дип рок" set "ALT=deep rock galactic"
+    if /i "!K!"=="дрг" set "ALT=deep rock galactic"
+    if /i "!K!"=="хеллдайверс" set "ALT=helldivers"
+    if /i "!K!"=="хеллдайверс 2" set "ALT=helldivers 2"
+    if /i "!K!"=="хд2" set "ALT=helldivers 2"
+    if /i "!K!"=="хеллдавэрс" set "ALT=helldivers"
+    if /i "!K!"=="гта онлайн" set "ALT=gta online"
+    if /i "!K!"=="гтао" set "ALT=gta online"
+    if /i "!K!"=="рдр онлайн" set "ALT=red dead online"
+    if /i "!K!"=="рдо" set "ALT=red dead online"
+    if /i "!K!"=="зе форест" set "ALT=the forest"
+    if /i "!K!"=="сонс оф зе форест" set "ALT=sons of the forest"
+    if /i "!K!"=="соны фореста" set "ALT=sons of the forest"
+    if /i "!K!"=="грин хелл" set "ALT=green hell"
+    if /i "!K!"=="гринхелл" set "ALT=green hell"
+    if /i "!K!"=="сабнавтика" set "ALT=subnautica"
+    if /i "!K!"=="сабнотика" set "ALT=subnautica"
+    if /i "!K!"=="сабнавтика 2" set "ALT=subnautica 2"
+    if /i "!K!"=="сабнавтика бз" set "ALT=subnautica below zero"
+    if /i "!K!"=="белоу зиро" set "ALT=subnautica below zero"
+    if /i "!K!"=="ноу мэнс скай" set "ALT=no mans sky"
+    if /i "!K!"=="номанс скай" set "ALT=no mans sky"
+    if /i "!K!"=="номанскай" set "ALT=no mans sky"
+    if /i "!K!"=="стардев вэлли" set "ALT=stardew valley"
+    if /i "!K!"=="стардью" set "ALT=stardew valley"
+    if /i "!K!"=="стардью вэлли" set "ALT=stardew valley"
+    if /i "!K!"=="анимал кроссинг нью хорайзонс" set "ALT=animal crossing new horizons"
+    if /i "!K!"=="аснх" set "ALT=animal crossing new horizons"
+    if /i "!K!"=="гравити фоллс" set "ALT=gravity falls"
+    if /i "!K!"=="гравити" set "ALT=gravity falls"
+    if /i "!K!"=="хадес" set "ALT=hades"
+    if /i "!K!"=="хадес 2" set "ALT=hades 2"
+    if /i "!K!"=="дед селс" set "ALT=dead cells"
+    if /i "!K!"=="дед селлс" set "ALT=dead cells"
+    if /i "!K!"=="скул" set "ALT=skul"
+    if /i "!K!"=="скул зе хироу" set "ALT=skul the hero slayer"
+    if /i "!K!"=="инскрипшн" set "ALT=inscryption"
+    if /i "!K!"=="инскрипшен" set "ALT=inscryption"
+    if /i "!K!"=="слэй зе спайр" set "ALT=slay the spire"
+    if /i "!K!"=="слэй" set "ALT=slay the spire"
+    if /i "!K!"=="балатро" set "ALT=balatro"
+    if /i "!K!"=="вампир сурвайворс" set "ALT=vampire survivors"
+    if /i "!K!"=="вампир сурвайвор" set "ALT=vampire survivors"
+    if /i "!K!"=="бротато" set "ALT=brotato"
+    if /i "!K!"=="майнкрафт 2" set "ALT=minecraft 2"
+    if /i "!K!"=="майнкрафт данженс" set "ALT=minecraft dungeons"
+    if /i "!K!"=="майн данженс" set "ALT=minecraft dungeons"
+    if /i "!K!"=="майнкрафт легендс" set "ALT=minecraft legends"
+    if /i "!K!"=="майн легендс" set "ALT=minecraft legends"
+    if /i "!K!"=="роблокс" set "ALT=roblox"
+    if /i "!K!"=="роблокс 2" set "ALT=roblox 2"
+    if /i "!K!"=="роблокс студио" set "ALT=roblox studio"
+    if /i "!K!"=="фортнайт" set "ALT=fortnite"
+    if /i "!K!"=="форточка" set "ALT=fortnite"
+    if /i "!K!"=="фортнайт 2" set "ALT=fortnite 2"
+    if /i "!K!"=="апекс легенд" set "ALT=apex legends"
+    if /i "!K!"=="колда варзона" set "ALT=call of duty warzone"
+)
 
-def enable_ansi():
-    if os.name == "nt":
-        os.system("")
-
-
-def set_title(title):
-    if os.name == "nt":
-        os.system(f"title {title}")
-
-
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
-
-
-def normalize_word(word):
-    w = word.lower().strip()
-    if MORPH and re.match(r'^[а-яё]+$', w):
-        return MORPH.parse(w)[0].normal_form
-    return w
-
-
-def fuzzy_match(text, query, threshold=0.75):
-    if not text or not query:
-        return False
-    t = text.lower()
-    q = query.lower()
-    if q in t:
-        return True
-    if SequenceMatcher(None, t, q).ratio() >= threshold:
-        return True
-    for word in re.split(r'[^a-zа-яё0-9]+', t):
-        if word and SequenceMatcher(None, word, q).ratio() >= threshold:
-            return True
-    return False
-
-
-def check_for_updates():
-    try:
-        req = urllib.request.Request(VERSION_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            remote_version = r.read().decode("utf-8").strip()
-    except Exception:
-        return
-
-    if not remote_version or remote_version == CURRENT_VERSION:
-        return
-
-    print(f"\n  Доступна новая версия: {remote_version} (у вас {CURRENT_VERSION})")
-    try:
-        choice = input("  Обновить скрипт? (y/n): ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        return
-    if choice != "y":
-        print("  Пропускаем обновление.\n")
-        return
-
-    print("  Скачиваем новую версию...")
-    try:
-        req = urllib.request.Request(SCRIPT_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            new_code = r.read().decode("utf-8")
-    except Exception as e:
-        print(f"  [!] Не удалось скачать обновление: {e}")
-        return
-
-    if "RAW_URL" not in new_code:
-        print("  [!] Скачанный файл не похож на скрипт. Обновление отменено.")
-        return
-
-    try:
-        with open(__file__, "w", encoding="utf-8") as f:
-            f.write(new_code)
-        print("  Скрипт обновлён! Перезапускаем...\n")
-        time.sleep(1)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        print(f"  [!] Не удалось записать файл: {e}")
-        print("  Возможно, нет прав на запись в эту папку.")
-
-
-def download_and_decode():
-    req = urllib.request.Request(RAW_URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        b64 = r.read().decode("utf-8", errors="ignore")
-    b64 = re.sub(r"\s", "", b64)
-    raw = base64.b64decode(b64)
-    text = raw.decode("utf-8", errors="replace")
-    if "Логин:" not in text:
-        raise ValueError("Файл не похож на список аккаунтов")
-    return text.splitlines()
-
-
-def format_games(games_line, query_list):
-    games_text = re.sub(r"^🎮\s*Игры:\s*", "", games_line)
-    games = [g.strip() for g in re.split(r",\s*", games_text) if g.strip()]
-    total = len(games)
-    matched = []
-    for qq in query_list:
-        for g in games:
-            if g not in matched and (qq.lower() in g.lower() or fuzzy_match(g, qq)):
-                matched.append(g)
-    if total <= 3:
-        return ", ".join(games)
-    if matched:
-        shown = matched[:3]
-        rest = total - len(shown)
-        return ", ".join(shown) + (f"  +{rest} игр" if rest > 0 else "")
-    else:
-        shown = games[:3]
-        return ", ".join(shown) + f"  +{total - 3} игр"
-
-
-def search(lines, query):
-    q = query.strip()
-    if not q:
-        return
-
-    q_lower = q.lower()
-    alt = SYNONYMS.get(q_lower)
-    queries = [q]
-    if alt:
-        queries.append(alt)
-
-    if MORPH and re.match(r'^[а-яё\s]+$', q_lower):
-        norm = normalize_word(q_lower)
-        if norm and norm not in queries:
-            queries.append(norm)
-
-    found = 0
-    games = login = password = ""
-    match = False
-
-    def print_account(g, l, p):
-        print(f"  \033[33m🎮 {format_games(g, queries)}\033[0m")
-        print(f"     \033[32m{re.sub(r'^👤\s*Логин:\s*', 'Логин: ', l)}\033[0m")
-        print(f"     \033[90m{re.sub(r'^🔒\s*Пароль:\s*', 'Пароль: ', p)}\033[0m")
-        print()
-
-    def is_match(line):
-        for qq in queries:
-            if qq.lower() in line.lower():
-                return True
-            if fuzzy_match(line, qq):
-                return True
-        return False
-
-    for line in lines:
-        if line.startswith("🎮"):
-            games = line
-            login = password = ""
-            match = is_match(line)
-        elif line.startswith("👤"):
-            login = line
-        elif line.startswith("🔒"):
-            password = line
-        elif line.strip() == "":
-            if match:
-                print_account(games, login, password)
-                found += 1
-                match = False
-
-    if match:
-        print_account(games, login, password)
-        found += 1
-
-    print("  \033[90m" + "─" * 42 + "\033[0m")
-    if found == 0:
-        print("  \033[91mНичего не найдено.\033[0m")
-    else:
-        print(f"  \033[96mНайдено: {found}\033[0m")
-    if alt:
-        print(f"  \033[90m(искали также: {alt})\033[0m")
-
-
-def show_header():
-    print()
-    print("  ┌─────────────────────────────────────────┐")
-    print("  │   ПОИСК АККАУНТОВ STEAM                 │")
-    link = "\033]8;;https://funpay.com/users/12871901/\033\\MisterZidez\033]8;;\033\\"
-    prefix = "  │   автор: "
-    print(f"{prefix}{link}" + " " * 20 + "│")
-    print(f"  │   версия: {CURRENT_VERSION}".ljust(44) + "│")
-    print("  └─────────────────────────────────────────┘")
-    print()
-
-
-def main():
-    enable_ansi()
-    set_title("Поиск аккаунтов Steam — by MisterZidez")
-
-    clear()
-    print()
-    print("  Проверка обновлений...")
-    check_for_updates()
-
-    clear()
-    print()
-    print("  Загрузка списка аккаунтов...")
-    print()
-
-    try:
-        lines = download_and_decode()
-        print("  Готово.")
-    except Exception as e:
-        print(f"  [!] Не удалось загрузить файл: {e}")
-        input("  Нажмите Enter для выхода...")
-        sys.exit(1)
-
-    time.sleep(1)
-    clear()
-
-    while True:
-        show_header()
-        try:
-            query = input("  Введите игру: ")
-        except (EOFError, KeyboardInterrupt):
-            break
-        if not query.strip():
-            clear()
-            continue
-
-        clear()
-        print()
-        print(f"  Поиск: {query}")
-        print("  " + "─" * 42)
-        print()
-
-        search(lines, query)
-
-        print()
-        input("  Нажмите Enter для нового поиска...")
-        clear()
-
-
-if __name__ == "__main__":
-    main()
+goto :eof
