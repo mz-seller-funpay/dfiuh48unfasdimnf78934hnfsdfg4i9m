@@ -52,7 +52,6 @@ if errorlevel 1 (
 )
 
 echo   Запускаем обновление...
-
 powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c', 'timeout /t 2 >nul & copy /y \"%UPD_FILE%\" \"%~f0\" >nul & del /q \"%UPD_FILE%\" >nul & start \"\" \"%~f0\"'"
 exit /b
 
@@ -62,7 +61,7 @@ echo.
 echo   Загрузка списка аккаунтов...
 echo.
 
-powershell -NoProfile -Command "try { $b64 = (Invoke-WebRequest -Uri '%RAW_URL%' -UseBasicParsing -ErrorAction Stop).Content; $b64 = $b64 -replace '\s',''; $bytes = [Convert]::FromBase64String($b64); [System.IO.File]::WriteAllBytes('%ACCS_FILE%', $bytes); exit 0 } catch { exit 1 }"
+powershell -NoProfile -Command "$b64 = (Invoke-WebRequest -Uri '%RAW_URL%' -UseBasicParsing).Content; $b64 = $b64 -replace '\s',''; $bytes = [Convert]::FromBase64String($b64); [IO.File]::WriteAllBytes('%ACCS_FILE%', $bytes)"
 if errorlevel 1 (
     echo   [!] Не удалось скачать файл.
     if exist "%ACCS_FILE%" (
@@ -74,7 +73,7 @@ if errorlevel 1 (
     goto :search
 )
 
-powershell -NoProfile -Command "try { $content = [System.IO.File]::ReadAllText('%ACCS_FILE%', [System.Text.Encoding]::UTF8); if ($content -match 'Логин:') { exit 0 } else { exit 1 } } catch { exit 1 }"
+powershell -NoProfile -Command "$c = [IO.File]::ReadAllText('%ACCS_FILE%', [Text.Encoding]::UTF8); if ($c -match 'Логин:') { exit 0 } else { exit 1 }"
 if errorlevel 1 (
     echo   [!] Файл повреждён.
     del /q "%ACCS_FILE%" 2>nul
@@ -126,12 +125,11 @@ echo.
 >> "%PS1_FILE%" echo     'ведьмак дикая охота'='witcher 3 wild hunt'; 'киберпанк 2077'='cyberpunk 2077';
 >> "%PS1_FILE%" echo     'данганронпа'='danganronpa'; 'данганронпа 2'='danganronpa 2'; 'данганронпа v3'='danganronpa v3';
 >> "%PS1_FILE%" echo     'данганронпа 3'='danganronpa v3'; 'данга'='danganronpa';
->> "%PS1_FILE%" echo     'ведьмак 2'='witcher 2'; 'ведьмак 1'='witcher'; 'ведьмак 3 дикая охота'='witcher 3 wild hunt';
+>> "%PS1_FILE%" echo     'ведьмак 2'='witcher 2'; 'ведьмак 1'='witcher';
 >> "%PS1_FILE%" echo     'гвинт'='gwent'; 'киберпанк 2'='cyberpunk 2'; 'ведьмак 4'='witcher 4';
 >> "%PS1_FILE%" echo     'дарк соулс'='dark souls'; 'дарк соулз'='dark souls'; 'дарк соулс 3'='dark souls 3';
 >> "%PS1_FILE%" echo     'дарк соулс 2'='dark souls 2'; 'дс'='dark souls'; 'дс3'='dark souls 3';
->> "%PS1_FILE%" echo     'секиро'='sekiro'; 'секиро тени умирают дважды'='sekiro'; 'бладборн'='bloodborne';
->> "%PS1_FILE%" echo     'блудборн'='bloodborne'; 'армор кор'='armored core'; 'арморд кор'='armored core';
+>> "%PS1_FILE%" echo     'секиро'='sekiro'; 'бладборн'='bloodborne'; 'армор кор'='armored core';
 >> "%PS1_FILE%" echo     'армор кор 6'='armored core 6'; 'нио'='nioh'; 'нио 2'='nioh 2'; 'лайс оф пи'='lies of p';
 >> "%PS1_FILE%" echo     'лордс оф зе фоллен'='lords of the fallen';
 >> "%PS1_FILE%" echo     'гта 5'='gta 5'; 'гта5'='gta 5'; 'гта 6'='gta 6'; 'гта 4'='gta 4';
@@ -317,7 +315,7 @@ echo.
 >> "%PS1_FILE%" echo $altQuery = $synonyms[$qLower]
 >> "%PS1_FILE%" echo $queries = @($q)
 >> "%PS1_FILE%" echo if ($altQuery) { $queries += $altQuery }
->> "%PS1_FILE%" echo $lines = [System.IO.File]::ReadAllLines($File, [System.Text.Encoding]::UTF8)
+>> "%PS1_FILE%" echo $lines = [IO.File]::ReadAllLines($File, [Text.Encoding]::UTF8)
 >> "%PS1_FILE%" echo $found = 0
 >> "%PS1_FILE%" echo $games = ''
 >> "%PS1_FILE%" echo $login = ''
