@@ -98,7 +98,7 @@ echo.
 echo   ┌─────────────────────────────────────────┐
 echo   │   ПОИСК АККАУНТОВ STEAM                 │
 powershell -NoProfile -Command "Write-Host '  │   author: ' -NoNewline; Write-Host ([char]27 + ']8;;https://funpay.com/users/12871901/' + [char]27 + '\MisterZidez' + [char]27 + ']8;;' + [char]27 + '\') -NoNewline; Write-Host '                   │'"
-echo   │   версия: %CURRENT_VERSION%                   │
+echo   │   версия: %CURRENT_VERSION%                     │
 echo   └─────────────────────────────────────────┘
 echo.
 set "QUERY="
