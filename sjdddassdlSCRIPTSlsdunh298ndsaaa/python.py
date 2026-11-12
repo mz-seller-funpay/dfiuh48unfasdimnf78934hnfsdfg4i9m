@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Поиск аккаунтов Steam — by MisterZidez
+Python-порт v1.5.0.
+
+Запуск:
+    python python.py [QUERY] [опции]
+
+Примеры:
+    python python.py "ведьмак"
+    python python.py "гта, киберпанк" --all
+    python python.py "гта + ведьмак"           # AND: обе игры
+    python python.py "гта -кс"                 # NOT: GTA без CS
+    python python.py --stats --min-games 3
+    python python.py "кс" --export csv --save out.csv --csv-header
+    python python.py --update-now --force
+    python python.py --save-config
+"""
 
 import argparse
 import base64
@@ -7,24 +24,27 @@ import binascii
 import csv
 import ctypes
 import json
+import logging
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+__version__ = "1.5.0"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Конфигурация
 # ──────────────────────────────────────────────────────────────────────────────
 
-CURRENT_VERSION = "1.1.1"
+CURRENT_VERSION = __version__
 RAW_URL = (
     "https://raw.githubusercontent.com/mz-seller-funpay/"
     "dfiuh48unfasdimnf78934hnfsdfg4i9m/refs/heads/main/"
@@ -121,10 +141,12 @@ class UI:
 class App:
     debug: bool = False
     script_path: str = ""
+    interactive: bool = False
     data: Data = field(default_factory=Data)
     ui: UI = field(default_factory=UI)
 
 APP = App()
+LOG = logging.getLogger("steam-search")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -134,21 +156,24 @@ APP = App()
 
 def dbg(*args) -> None:
     if APP.debug:
-        print("[debug]", *args, file=sys.stderr)
+        LOG.debug(" ".join(str(a) for a in args))
 
 
 def is_windows() -> bool:
     return sys.platform.startswith("win")
 
 
+HIDDEN_ATTR = 0x02
+SYSTEM_ATTR = 0x04
+
+
 def hide_file(path: Path) -> None:
     if is_windows():
         try:
-            HIDDEN = 0x02
             attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
             if attrs != -1:
                 ctypes.windll.kernel32.SetFileAttributesW(
-                    str(path), (attrs | HIDDEN) & 0xFFFFFFFF)
+                    str(path), (attrs | HIDDEN_ATTR) & 0xFFFFFFFF)
         except Exception as e:
             dbg(f"hide_file failed: {e}")
 
@@ -156,11 +181,10 @@ def hide_file(path: Path) -> None:
 def unhide_file(path: Path) -> None:
     if is_windows():
         try:
-            HIDDEN = 0x02
             attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
             if attrs != -1:
-                ctypes.windll.kernel32.SetFileAttributesW(
-                    str(path), (attrs & ~HIDDEN) & 0xFFFFFFFF)
+                new = attrs & ~HIDDEN_ATTR & ~SYSTEM_ATTR & 0xFFFFFFFF
+                ctypes.windll.kernel32.SetFileAttributesW(str(path), new)
         except Exception as e:
             dbg(f"unhide_file failed: {e}")
 
@@ -179,6 +203,8 @@ def safe_write(s: str) -> None:
     except UnicodeEncodeError:
         sys.stdout.write(s.encode("utf-8", "replace").decode("utf-8", "replace"))
         sys.stdout.flush()
+    except BrokenPipeError:
+        sys.exit(0)
 
 
 def safe_print(s: str = "") -> None:
@@ -205,13 +231,39 @@ def paint(code: str, s: str) -> str:
     return f"{c}{s}{color('\033[0m')}"
 
 
-def http_get(url: str, timeout: int = 30) -> bytes:
+# ──────────────────────────────────────────────────────────────────────────────
+# HTTP с ETag
+# ──────────────────────────────────────────────────────────────────────────────
+
+_ETAG_CACHE: dict[str, tuple[str, bytes]] = {}
+
+
+def http_get(url: str, timeout: int = 30, use_etag: bool = False) -> bytes:
     last_err = None
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    headers = {"User-Agent": USER_AGENT}
+    if use_etag and url in _ETAG_CACHE:
+        headers["If-None-Match"] = _ETAG_CACHE[url][0]
+
     for attempt in range(HTTP_RETRIES):
         try:
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read()
+                data = resp.read()
+                if use_etag:
+                    etag = resp.headers.get("ETag")
+                    if etag:
+                        _ETAG_CACHE[url] = (etag, data)
+                return data
+        except urllib.error.HTTPError as e:
+            if e.code == 304 and use_etag and url in _ETAG_CACHE:
+                dbg(f"http_get 304 Not Modified: {url}")
+                return _ETAG_CACHE[url][1]
+            last_err = e
+            dbg(f"http_get HTTP {e.code} attempt {attempt + 1}")
+            if 400 <= e.code < 500 and e.code != 429:
+                raise
+            if attempt < HTTP_RETRIES - 1:
+                time.sleep(1 + attempt)
         except Exception as e:
             last_err = e
             dbg(f"http_get attempt {attempt + 1} failed: {e}")
@@ -220,8 +272,12 @@ def http_get(url: str, timeout: int = 30) -> bytes:
     raise last_err  # type: ignore[misc]
 
 
+def normalize_space(s: str) -> str:
+    return " ".join(s.split())
+
+
 def normalize_query(q: str) -> str:
-    return " ".join(q.strip().lower().split())
+    return normalize_space(q.strip().lower())
 
 
 def strip_prefix(line: str, prefix: str) -> str:
@@ -240,8 +296,8 @@ def _wordbound_re(n_lower: str) -> re.Pattern:
 def _match(text: str, needle: str, wordbound: bool) -> bool:
     if not needle:
         return False
-    t = text.lower()
-    n = needle.lower()
+    t = normalize_space(text.lower())
+    n = normalize_space(needle.lower())
     if wordbound and should_wordbound(n):
         return _wordbound_re(n).search(t) is not None
     return n in t
@@ -343,7 +399,7 @@ def load_synonyms(use_cache: bool = True) -> dict:
             dbg(f"failed to load local synonyms: {e}")
 
     try:
-        raw = http_get(SYNONYMS_URL, timeout=20)
+        raw = http_get(SYNONYMS_URL, timeout=20, use_etag=True)
         data = _parse_synonyms(raw)
         if data:
             dbg(f"synonyms downloaded: {len(data)}")
@@ -372,14 +428,17 @@ def load_synonyms(use_cache: bool = True) -> dict:
 
 def _validate_script(data: bytes) -> bool:
     text = data.decode("utf-8", "ignore")
-    return "CURRENT_VERSION" in text and (
-        text.startswith("#!") or "def check_for_updates" in text
+    return (
+        "CURRENT_VERSION" in text
+        and "def check_for_updates" in text
+        and "__version__" in text
     )
 
 
 def check_for_updates(force: bool = False) -> None:
     try:
-        remote = http_get(VERSION_URL, timeout=10).decode("utf-8", "ignore").strip()
+        remote = http_get(VERSION_URL, timeout=10, use_etag=True)
+        remote = remote.decode("utf-8", "ignore").strip()
     except Exception as e:
         dbg(f"version check failed: {e}")
         return
@@ -395,6 +454,11 @@ def check_for_updates(force: bool = False) -> None:
     else:
         print(f"  Доступна новая версия: {remote} (у вас {CURRENT_VERSION})")
 
+    if APP.interactive and not force:
+        print("  Текущая сессия продолжит работу со старой версией.")
+        print("  Перезапустите скрипт вручную, чтобы использовать новую.")
+        return
+
     if not force:
         try:
             choice = safe_input("  Обновить скрипт? (y/n): ").strip().lower()
@@ -403,8 +467,6 @@ def check_for_updates(force: bool = False) -> None:
         if choice != "y":
             print("  Пропускаем обновление.")
             return
-    else:
-        print("  --update-now: обновляем без вопроса.")
 
     print("  Скачиваем новую версию...")
     tmp_file = None
@@ -414,15 +476,16 @@ def check_for_updates(force: bool = False) -> None:
             print("  [!] Скачанный файл не похож на скрипт. Обновление отменено.")
             return
 
-        fd, tmp_file = tempfile.mkstemp(prefix="steam_upd_", suffix=".py")
+        script_dir = os.path.dirname(APP.script_path) or "."
+        fd, tmp_file = tempfile.mkstemp(
+            prefix=".steam_upd_", suffix=".py", dir=script_dir,
+        )
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-
-        backup = APP.script_path + ".bak"
         try:
-            shutil.copy2(APP.script_path, backup)
-        except Exception as e:
-            dbg(f"backup failed: {e}")
+            hide_file(Path(tmp_file))
+        except Exception:
+            pass
 
         try:
             os.replace(tmp_file, APP.script_path)
@@ -436,15 +499,8 @@ def check_for_updates(force: bool = False) -> None:
         except Exception:
             pass
 
-        print("  Скрипт обновлён! Перезапускаем...")
-        time.sleep(1)
-        kwargs = {}
-        if is_windows():
-            kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-        else:
-            kwargs["start_new_session"] = True
-        subprocess.Popen([sys.executable, APP.script_path] + sys.argv[1:], **kwargs)
-        sys.exit(0)
+        print("  Обновление завершено.")
+        print("  Перезапустите скрипт, чтобы использовать новую версию.")
     except Exception as e:
         print(f"  [!] Не удалось обновить: {e}")
     finally:
@@ -462,7 +518,7 @@ def check_for_updates(force: bool = False) -> None:
 
 def download_accounts(use_cache: bool, use_accs_cache: bool) -> str:
     try:
-        raw = http_get(RAW_URL, timeout=30)
+        raw = http_get(RAW_URL, timeout=30, use_etag=True)
         if len(raw) > MAX_RAW_BYTES:
             raise RuntimeError(f"файл слишком большой ({len(raw)} байт)")
         b64 = re.sub(rb"\s+", b"", raw)
@@ -496,7 +552,7 @@ def download_accounts(use_cache: bool, use_accs_cache: bool) -> str:
 
 def games_list(games_line: str) -> list[str]:
     text = strip_prefix(games_line, PREFIX_GAMES)
-    return [g.strip() for g in text.split(", ") if g.strip()]
+    return [normalize_space(g) for g in text.split(", ") if g.strip()]
 
 
 def parse_records(text: str) -> list[Record]:
@@ -504,7 +560,7 @@ def parse_records(text: str) -> list[Record]:
     games = login = password = ""
 
     def push():
-        if games and login and password:
+        if games and login:
             out.append(Record(
                 games=strip_prefix(games, PREFIX_GAMES),
                 login=strip_prefix(login, PREFIX_LOGIN),
@@ -529,30 +585,131 @@ def parse_records(text: str) -> list[Record]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Поиск / вывод
+# Запросы: + (AND), - (NOT), , (OR)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _line_matches(line: str, queries: list[str], alts: list[str]) -> bool:
-    for q in queries:
-        if _match(line, q, wordbound=True):
-            return True
-    for a in alts:
-        if _match(line, a, wordbound=False):
-            return True
-    return False
+@dataclass
+class Query:
+    """Разобранный запрос. queries = OR-группы, каждая — список AND-термов."""
+    groups: list[list[str]] = field(default_factory=list)
+    alts: list[list[str]] = field(default_factory=list)
+    excludes: list[str] = field(default_factory=list)
+    excludes_alt: list[str] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not self.groups
 
 
-def format_games(rec: Record, queries: list[str], alts: list[str]) -> str:
+def _resolve_alt(term: str, synonyms: dict) -> list[str]:
+    syn = synonyms.get(term, "")
+    return _split_alt(syn) if syn else []
+
+
+def parse_query(raw: str, synonyms: dict) -> Query:
+    """
+    "гта + ведьмак -кс" →
+        groups  = [["гта", "ведьмак"]]
+        alts    = [["grand theft auto", "witcher"]]
+        excludes = ["кс"]
+        excludes_alt = ["cs"]
+    "гта, киберпанк" → две OR-группы.
+    """
+    q = Query()
+    # Excludes: -term
+    positive_parts = []
+    for chunk in re.split(r"[,]", raw):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        terms = []
+        for tok in chunk.split():
+            if tok.startswith("-") and len(tok) > 1:
+                term = normalize_query(tok[1:])
+                if term:
+                    q.excludes.append(term)
+                    q.excludes_alt.extend(_resolve_alt(term, synonyms))
+            else:
+                terms.append(tok)
+        # склеиваем + AND: "гта + ведьмак" → ["гта", "ведьмак"]
+        if "+" in terms:
+            parts = [t for t in terms if t != "+"]
+        else:
+            parts = terms
+        normalized = [normalize_query(p) for p in parts if normalize_query(p)]
+        if normalized:
+            positive_parts.append(normalized)
+
+    for terms in positive_parts:
+        q.groups.append(terms)
+        q.alts.append([a for t in terms for a in _resolve_alt(t, synonyms)])
+    return q
+
+
+def _query_line_matches(line: str, q: Query) -> bool:
+    if not q.groups:
+        return False
+    # OR по группам
+    matched_group = False
+    for terms, alts in zip(q.groups, q.alts):
+        # AND внутри группы
+        all_terms = True
+        for t in terms:
+            if not _match(line, t, wordbound=True):
+                all_terms = False
+                break
+        if all_terms:
+            matched_group = True
+            break
+        # пробуем alt
+        all_alts = True
+        for a in alts:
+            if not _match(line, a, wordbound=False):
+                all_alts = False
+                break
+        if all_alts and alts:
+            matched_group = True
+            break
+    if not matched_group:
+        return False
+    # NOT
+    for ex in q.excludes:
+        if _match(line, ex, wordbound=True):
+            return False
+    for ex in q.excludes_alt:
+        if _match(line, ex, wordbound=False):
+            return False
+    return True
+
+
+def _all_alt_list(q: Query) -> list[str]:
+    out = []
+    for group in q.alts:
+        out.extend(group)
+    out.extend(q.excludes_alt)
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Вывод
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def format_games(rec: Record, q: Query, full: bool = False) -> str:
     games = games_list(rec.games)
     total = len(games)
+    if full:
+        return ", ".join(games)
     if total <= 3:
         return ", ".join(games)
 
+    all_q = [t for group in q.groups for t in group]
+    all_alt = [a for group in q.alts for a in group]
+
     matched = []
     for g in games:
-        hit = any(_match(g, q, wordbound=True) for q in queries) or \
-              any(_match(g, a, wordbound=False) for a in alts)
+        hit = any(_match(g, t, wordbound=True) for t in all_q) or \
+              any(_match(g, a, wordbound=False) for a in all_alt)
         if hit and g not in matched:
             matched.append(g)
 
@@ -566,12 +723,12 @@ def format_games(rec: Record, queries: list[str], alts: list[str]) -> str:
     return f"{', '.join(shown)}  +{total - 3} игр"
 
 
-def format_account(rec: Record, queries: list[str], alts: list[str]) -> str:
+def format_account(rec: Record, q: Query, full: bool = False) -> str:
     yellow = color("\033[33m")
     green = color("\033[32m")
     gray = color("\033[90m")
     reset = color("\033[0m")
-    games_str = format_games(rec, queries, alts)
+    games_str = format_games(rec, q, full)
     return (
         f"  {yellow}{M_GAMES} {games_str}{reset}\n"
         f"     {green}Логин: {rec.login}{reset}\n"
@@ -579,7 +736,7 @@ def format_account(rec: Record, queries: list[str], alts: list[str]) -> str:
     )
 
 
-def write_record(rec: Record, queries: list[str], alts: list[str]) -> None:
+def write_record(rec: Record, q: Query, full: bool = False) -> None:
     out = APP.ui.save_fh
     if out is None:
         return
@@ -594,7 +751,7 @@ def write_record(rec: Record, queries: list[str], alts: list[str]) -> None:
             "games_count": rec.games_count,
         }, ensure_ascii=False) + "\n")
     else:
-        out.write(f"{format_games(rec, queries, alts)}\n")
+        out.write(f"{format_games(rec, q, full)}\n")
         out.write(f"  Логин: {rec.login}\n")
         out.write(f"  Пароль: {rec.password}\n\n")
     out.flush()
@@ -602,10 +759,10 @@ def write_record(rec: Record, queries: list[str], alts: list[str]) -> None:
 
 def search_records(
     records: list[Record],
-    queries: list[str],
-    alts: list[str],
+    q: Query,
     limit: int | None,
     min_games: int = 0,
+    full: bool = False,
 ) -> int:
     header_written = False
     found = 0
@@ -614,7 +771,7 @@ def search_records(
     for rec in records:
         if rec.games_count < min_games:
             continue
-        if not _line_matches(PREFIX_GAMES + rec.games, queries, alts):
+        if not _query_line_matches(PREFIX_GAMES + rec.games, q):
             continue
 
         found += 1
@@ -622,14 +779,15 @@ def search_records(
             continue
 
         if APP.ui.save_fh is not None and not header_written:
+            flat = [t for g in q.groups for t in g]
             APP.ui.save_fh.write(
                 f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} | "
-                f"{', '.join(queries) or '-'} ===\n"
+                f"{', '.join(flat) or '-'} ===\n"
             )
             header_written = True
 
-        safe_print(format_account(rec, queries, alts))
-        write_record(rec, queries, alts)
+        safe_print(format_account(rec, q, full))
+        write_record(rec, q, full)
         shown += 1
 
     sep = color("\033[90m") + "  " + "─" * 42 + color("\033[0m")
@@ -641,14 +799,15 @@ def search_records(
         if limit is not None and found > shown:
             suffix = f"  (показано {shown}, используйте --all или --limit N)"
         safe_print(paint("\033[96m", f"  Найдено: {found}{suffix}"))
-    if alts:
-        safe_print(paint("\033[90m", f"  (искали также: {', '.join(alts)})"))
+    if q.excludes:
+        safe_print(paint("\033[90m", f"  исключено: {', '.join(q.excludes)}"))
     return found
 
 
 def stats_records(records: list[Record], top: int = 10, min_games: int = 0) -> None:
     records = [r for r in records if r.games_count >= min_games]
     total = len(records)
+    no_games = sum(1 for r in records if r.games_count == 0)
     counter = Counter()
     display = {}
     dist = Counter()
@@ -656,11 +815,13 @@ def stats_records(records: list[Record], top: int = 10, min_games: int = 0) -> N
     for rec in records:
         dist[rec.games_count] += 1
         for g in games_list(rec.games):
-            key = g.strip().lower()
+            key = normalize_space(g.strip().lower())
             counter[key] += 1
             display.setdefault(key, g.strip())
 
     safe_print(f"  Аккаунтов: {total}")
+    if no_games:
+        safe_print(f"  Аккаунтов без игр: {no_games}")
     safe_print(f"  Уникальных игр: {len(counter)}")
     safe_print()
     safe_print(paint("\033[96m", f"  Топ-{top} игр:"))
@@ -670,21 +831,6 @@ def stats_records(records: list[Record], top: int = 10, min_games: int = 0) -> N
     safe_print(paint("\033[96m", "  Распределение по числу игр:"))
     for n in sorted(dist):
         safe_print(f"    {paint('\033[32m', f'{n:>3}')} игр  —  {dist[n]} акк.")
-
-
-def prepare_queries(raw: str, synonyms: dict) -> tuple[list[str], list[str]]:
-    parts = [p for p in raw.split(",") if p.strip()]
-    queries: list[str] = []
-    alts: list[str] = []
-    for p in parts:
-        norm = normalize_query(p)
-        if not norm:
-            continue
-        queries.append(norm)
-        syn = synonyms.get(norm, "")
-        if syn:
-            alts.extend(_split_alt(syn))
-    return list(dict.fromkeys(queries)), list(dict.fromkeys(alts))
 
 
 def print_filter_info(records: list[Record], min_games: int) -> None:
@@ -699,23 +845,31 @@ def print_filter_info(records: list[Record], min_games: int) -> None:
 # Конфиг
 # ──────────────────────────────────────────────────────────────────────────────
 
-CONFIG_PATH = Path(os.path.expanduser("~")) / ".steam_search_config.json"
+
+def default_config_path() -> Path:
+    return Path.home() / ".steam_search_config.json"
 
 
-def read_config() -> dict:
+def read_config(path: Path) -> dict:
     try:
-        if CONFIG_PATH.is_file():
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
     except Exception as e:
         dbg(f"config read failed: {e}")
     return {}
 
 
-def write_config(cfg: dict) -> None:
+def get_bool(cfg: dict, key: str, default: bool = False) -> bool:
+    v = cfg.get(key, default)
+    return bool(v) if isinstance(v, (bool, int)) else default
+
+
+def write_config(path: Path, cfg: dict) -> None:
     try:
-        CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
-                               encoding="utf-8")
-        safe_print(f"  Конфиг сохранён: {CONFIG_PATH}")
+        path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+        safe_print(f"  Конфиг сохранён: {path}")
     except Exception as e:
         safe_print(f"  [!] Не удалось сохранить конфиг: {e}")
 
@@ -732,32 +886,48 @@ def parse_args(argv=None):
     )
     p.add_argument("query", nargs="?", help="игра для поиска (без интерактива)")
     p.add_argument("--version", action="version", version=f"%(prog)s {CURRENT_VERSION}")
-    p.add_argument("--no-update", action="store_true", help="не проверять обновления")
+    p.add_argument("--no-update", action="store_true", default=None,
+                   help="не проверять обновления")
     p.add_argument("--update-now", action="store_true", help="принудительно обновить")
+    p.add_argument("--check-update", action="store_true",
+                   help="проверить обновления, несмотря на конфиг")
+    p.add_argument("--force", action="store_true",
+                   help="разрешить опасные комбинации (--by password + --save)")
+    p.add_argument("--interactive", "-i", action="store_true",
+                   help="принудительно интерактивный режим")
     p.add_argument("--no-cache", action="store_true", help="не использовать кэш")
-    p.add_argument("--no-cache-accs", action="store_true",
+    p.add_argument("--no-cache-accs", action="store_true", default=None,
                    help="не кэшировать аккаунты")
     p.add_argument("--save", metavar="FILE", help="сохранять результаты в файл")
     p.add_argument("--save-mode", choices=["a", "w"], default="a")
     p.add_argument("--export", choices=["txt", "csv", "jsonl"], default="txt")
     p.add_argument("--csv-header", action="store_true",
-                   help="писать заголовок CSV (только при --save-mode w)")
+                   help="писать заголовок CSV, если файл пустой")
+    p.add_argument("--csv-delimiter", default=",", metavar="CHAR",
+                   help="разделитель CSV (по умолчанию ',')")
     p.add_argument("--limit", type=int, default=DEFAULT_LIMIT, metavar="N",
                    help=f"максимум отображаемых результатов (0 — без лимита; "
                         f"по умолчанию {DEFAULT_LIMIT})")
     p.add_argument("--all", action="store_true", help="без лимита результатов")
     p.add_argument("--min-games", type=int, default=0, metavar="N",
                    help="только аккаунты с >= N играми")
+    p.add_argument("--full-games", action="store_true",
+                   help="показывать весь список игр аккаунта")
     p.add_argument("--stats", action="store_true", help="статистика и выход")
     p.add_argument("--stats-top", type=int, default=10, metavar="N",
                    help="сколько игр в топе статистики (по умолчанию 10)")
     p.add_argument("--by", choices=["games", "login", "password"], default="games",
                    help="по чему искать; ВНИМАНИЕ: --by password выводит пароли")
     p.add_argument("--no-color", action="store_true", help="без ANSI-цветов")
+    p.add_argument("--config", metavar="FILE", default=None,
+                   help="путь к конфигу (по умолчанию ~/.steam_search_config.json)")
     p.add_argument("--save-config", action="store_true",
-                   help="сохранить текущие флаги в ~/.steam_search_config.json")
+                   help="сохранить текущие флаги в конфиг")
+    p.add_argument("--unset-config", metavar="KEY", action="append", default=[],
+                   help="удалить ключ из конфига (можно несколько раз)")
     p.add_argument("--dry-run", action="store_true",
                    help="загрузить данные, показать статистику, выйти")
+    p.add_argument("--log", metavar="FILE", help="писать debug-лог в файл")
     p.add_argument("--debug", action="store_true", help="подробный вывод в stderr")
     args = p.parse_args(argv)
 
@@ -765,12 +935,16 @@ def parse_args(argv=None):
         p.error("--min-games must be >= 0")
     if args.stats_top <= 0:
         p.error("--stats-top must be > 0")
-    if args.all and args.limit not in (DEFAULT_LIMIT, 0):
-        print("  [!] --all игнорирует --limit", file=sys.stderr)
     if args.limit < 0:
         p.error("--limit must be >= 0")
     if args.csv_header and args.export != "csv":
         p.error("--csv-header requires --export csv")
+    if args.all:
+        args.limit = 0
+    if args.dry_run and (args.query or args.save or args.stats):
+        p.error("--dry-run несовместим с QUERY, --save, --stats")
+    if args.by == "password" and args.save and not args.force:
+        p.error("--save с --by password требует --force (пароли в открытом виде)")
     return args
 
 
@@ -778,13 +952,21 @@ def open_save(args) -> None:
     if not args.save:
         return
     try:
-        Path(args.save).parent.mkdir(parents=True, exist_ok=True)
-        fh = open(args.save, args.save_mode, encoding="utf-8", newline="")
+        path = Path(args.save)
+        if path.resolve() in (accs_cache_path().resolve(), syn_cache_path().resolve()):
+            raise RuntimeError("--save указывает на файл кэша")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        is_empty = not path.exists() or path.stat().st_size == 0
+        if args.save_mode == "w" and not is_empty:
+            print(f"  [!] --save-mode w перезапишет {path}")
+        fh = open(path, args.save_mode, encoding="utf-8", newline="")
         APP.ui.save_fh = fh
         if args.export == "csv":
-            APP.ui.csv_writer = csv.writer(fh)
-            if args.csv_header and args.save_mode == "w":
-                APP.ui.csv_writer.writerow(["login", "password", "games", "games_count"])
+            APP.ui.csv_writer = csv.writer(
+                fh, delimiter=args.csv_delimiter, dialect="unix")
+            if args.csv_header and is_empty:
+                APP.ui.csv_writer.writerow(
+                    ["login", "password", "games", "games_count"])
         dbg(f"results saved to {args.save} ({args.save_mode})")
     except Exception as e:
         safe_print(f"  [!] Не удалось открыть файл для сохранения: {e}")
@@ -804,21 +986,24 @@ def close_save() -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def run_search(raw_query: str, limit: int | None, min_games: int, by: str) -> int:
-    queries, alts = prepare_queries(raw_query, APP.data.synonyms)
-    if not queries:
+def run_search(raw_query: str, limit: int | None, min_games: int,
+               by: str, full: bool) -> int:
+    q = parse_query(raw_query, APP.data.synonyms)
+    if q.is_empty():
         safe_print("  [!] Пустой запрос.")
         return 0
 
     records = APP.data.records
 
     if by != "games":
+        if by == "password":
+            safe_print("  [!] --by password: результаты содержат пароли в открытом виде.")
         filtered = []
         for rec in records:
             if rec.games_count < min_games:
                 continue
             field = rec.login if by == "login" else rec.password
-            if any(_match(field, q, wordbound=False) for q in queries):
+            if _query_line_matches(field, q):
                 filtered.append(rec)
         safe_print(f"  Поиск по {by}: {raw_query}")
         safe_print("  " + "─" * 42)
@@ -827,8 +1012,8 @@ def run_search(raw_query: str, limit: int | None, min_games: int, by: str) -> in
         for rec in filtered:
             if limit is not None and limit > 0 and shown >= limit:
                 continue
-            safe_print(format_account(rec, queries, []))
-            write_record(rec, queries, [])
+            safe_print(format_account(rec, q, full))
+            write_record(rec, q, full)
             shown += 1
         if not filtered:
             safe_print(paint("\033[91m", "  Ничего не найдено."))
@@ -839,11 +1024,14 @@ def run_search(raw_query: str, limit: int | None, min_games: int, by: str) -> in
             safe_print(paint("\033[96m", f"  Найдено: {len(filtered)}{suffix}"))
         return len(filtered)
 
+    flat = ", ".join(t for g in q.groups for t in g)
     safe_print(f"  Поиск: {raw_query}")
+    if q.excludes:
+        safe_print(f"  Исключено: {', '.join(q.excludes)}")
     safe_print("  " + "─" * 42)
     safe_print()
     print_filter_info(records, min_games)
-    return search_records(records, queries, alts, limit, min_games)
+    return search_records(records, q, limit, min_games, full)
 
 
 def interactive_loop(args, limit: int | None) -> None:
@@ -859,7 +1047,9 @@ def interactive_loop(args, limit: int | None) -> None:
         safe_print()
 
         try:
-            query = safe_input("  Игра (q — выход, s — статистика, h — помощь): ").strip()
+            query = safe_input(
+                "  Игра (q — выход, s/статистика, h/помощь): "
+            ).strip()
         except (EOFError, KeyboardInterrupt):
             safe_print()
             return
@@ -868,7 +1058,7 @@ def interactive_loop(args, limit: int | None) -> None:
         low = query.lower()
         if low in ("q", "quit", "exit", "выход"):
             return
-        if low == "s":
+        if low in ("s", "stat", "stats", "статистика"):
             clear_screen()
             safe_print()
             stats_records(APP.data.records, args.stats_top, args.min_games)
@@ -881,7 +1071,9 @@ def interactive_loop(args, limit: int | None) -> None:
         if low in ("h", "?", "help", "помощь"):
             clear_screen()
             safe_print()
-            safe_print("  Введите название игры (можно несколько через запятую).")
+            safe_print("  Введите название игры.")
+            safe_print("  ',' — OR, '+' — AND, '-' — исключить.")
+            safe_print("  Пример: гта + ведьмак -кс")
             safe_print("  Синонимы подставляются автоматически (гта → grand theft auto).")
             safe_print("  q — выход, s — статистика, h — эта справка.")
             safe_print()
@@ -893,7 +1085,7 @@ def interactive_loop(args, limit: int | None) -> None:
 
         clear_screen()
         safe_print()
-        run_search(query, limit, args.min_games, args.by)
+        run_search(query, limit, args.min_games, args.by, args.full_games)
 
         safe_print()
         try:
@@ -905,31 +1097,72 @@ def interactive_loop(args, limit: int | None) -> None:
             return
 
 
+def setup_logging(args) -> None:
+    handler = None
+    if args.log:
+        try:
+            handler = logging.FileHandler(args.log, encoding="utf-8")
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s %(levelname)s %(message)s"))
+        except Exception as e:
+            print(f"  [!] Не удалось открыть лог: {e}", file=sys.stderr)
+            handler = None
+    if handler is None:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+    LOG.addHandler(handler)
+    LOG.setLevel(logging.DEBUG if args.debug else logging.WARNING)
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
     APP.debug = args.debug
     APP.script_path = os.path.abspath(sys.argv[0])
     APP.ui.export = args.export
     APP.ui.color = not args.no_color and sys.stdout.isatty()
+    setup_logging(args)
 
-    cfg = read_config()
+    config_path = Path(args.config) if args.config else default_config_path()
+    cfg = read_config(config_path)
+
+    # Конфиг: явные флаги перебивают, иначе — значения из конфига
+    no_update = args.no_update if args.no_update is not None else get_bool(cfg, "no_update")
+    no_cache_accs = (
+        args.no_cache_accs if args.no_cache_accs is not None
+        else get_bool(cfg, "no_cache_accs")
+    )
+
     use_cache = not args.no_cache
-    use_accs_cache = not args.no_cache_accs and not cfg.get("no_cache_accs", False)
-    limit = None if args.all or args.limit == 0 else args.limit
+    use_accs_cache = not no_cache_accs
+    limit = None if args.limit == 0 else args.limit
+
+    if args.unset_config:
+        changed = False
+        for key in args.unset_config:
+            if key in cfg:
+                cfg.pop(key, None)
+                changed = True
+        if changed:
+            write_config(config_path, cfg)
+        else:
+            safe_print("  Конфиг не изменён (ключи не найдены).")
+        return 0
 
     if args.save_config:
-        cfg.update({
-            "no_update": args.no_update,
-            "no_cache_accs": args.no_cache_accs,
-        })
-        write_config(cfg)
+        if args.no_update is not None:
+            cfg["no_update"] = args.no_update
+        if args.no_cache_accs is not None:
+            cfg["no_cache_accs"] = args.no_cache_accs
+        write_config(config_path, cfg)
         return 0
+
+    APP.interactive = bool(args.interactive or not args.query)
 
     clear_screen()
     safe_print()
     if args.update_now:
         check_for_updates(force=True)
-    elif not args.no_update and not cfg.get("no_update", False):
+    elif args.check_update or not no_update:
         safe_print("  Проверка обновлений...")
         check_for_updates()
 
@@ -949,6 +1182,8 @@ def main(argv=None) -> int:
     APP.data.synonyms = load_synonyms(use_cache=use_cache)
 
     APP.data.records = parse_records(APP.data.text)
+    if not APP.data.records:
+        safe_print("  [!] Список аккаунтов пуст — возможно, файл повреждён.")
     safe_print(f"  Аккаунтов загружено: {len(APP.data.records)}")
     safe_print("  Готово.")
     time.sleep(0.3)
@@ -968,8 +1203,8 @@ def main(argv=None) -> int:
             stats_records(APP.data.records, args.stats_top, args.min_games)
             return 0
 
-        if args.query:
-            run_search(args.query, limit, args.min_games, args.by)
+        if args.query and not args.interactive:
+            run_search(args.query, limit, args.min_games, args.by, args.full_games)
             return 0
 
         interactive_loop(args, limit)
@@ -985,4 +1220,6 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         safe_print()
+        sys.exit(0)
+    except BrokenPipeError:
         sys.exit(0)
