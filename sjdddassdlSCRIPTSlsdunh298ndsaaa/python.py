@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Поиск аккаунтов Steam — by MisterZidez
-Python-порт v1.5.0.
-
-Запуск:
-    python python.py [QUERY] [опции]
-
-Примеры:
-    python python.py "ведьмак"
-    python python.py "гта, киберпанк" --all
-    python python.py "гта + ведьмак"           # AND: обе игры
-    python python.py "гта -кс"                 # NOT: GTA без CS
-    python python.py --stats --min-games 3
-    python python.py "кс" --export csv --save out.csv --csv-header
-    python python.py --update-now --force
-    python python.py --save-config
-"""
 
 import argparse
 import base64
