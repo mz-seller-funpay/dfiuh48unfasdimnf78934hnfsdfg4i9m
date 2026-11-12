@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Поиск аккаунтов Steam — by MisterZidez
+Python-порт v1.5.2.
+
+Запуск:
+    python python.py [QUERY] [опции]
+"""
 
 import argparse
 import base64
@@ -21,7 +28,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Конфигурация
@@ -231,7 +238,6 @@ def http_get(url: str, timeout: int = 30, use_etag: bool = False) -> bytes:
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                # 304 может прийти без исключения — проверяем статус вручную
                 status = getattr(resp, "status", None) or resp.getcode()
                 if status == 304 and use_etag and url in _ETAG_CACHE:
                     dbg(f"http_get 304 Not Modified: {url}")
@@ -464,10 +470,6 @@ def check_for_updates(force: bool = False) -> None:
         )
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-        try:
-            hide_file(Path(tmp_file))
-        except Exception:
-            pass
 
         try:
             os.replace(tmp_file, APP.script_path)
@@ -481,8 +483,11 @@ def check_for_updates(force: bool = False) -> None:
         except Exception:
             pass
 
-        print("  Обновление завершено.")
-        print("  Перезапустите скрипт, чтобы использовать новую версию.")
+        print("  Обновление завершено. Закрываем скрипт.")
+        print("  Запустите его снова, чтобы использовать новую версию.")
+        sys.exit(0)
+    except SystemExit:
+        raise
     except Exception as e:
         print(f"  [!] Не удалось обновить: {e}")
     finally:
