@@ -464,11 +464,32 @@ def check_for_updates(force: bool = False) -> None:
         )
         with os.fdopen(fd, "wb") as f:
             f.write(data)
+
         try:
-            hide_file(Path(tmp_file))
+            os.replace(tmp_file, APP.script_path)
+            tmp_file = None
+        except OSError as e:
+            print(f"  [!] Не удалось заменить файл: {e}")
+            return
+
+        try:
+            os.chmod(APP.script_path, 0o755)
         except Exception:
             pass
 
+        print("  Обновление завершено. Закрываем скрипт.")
+        print("  Запустите его снова, чтобы использовать новую версию.")
+        sys.exit(0)          # ← выход, ничего дальше не выполняется
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"  [!] Не удалось обновить: {e}")
+    finally:
+        if tmp_file and os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
         try:
             os.replace(tmp_file, APP.script_path)
             tmp_file = None
