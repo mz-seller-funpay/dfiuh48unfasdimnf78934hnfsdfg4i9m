@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Поиск аккаунтов Steam — by MisterZidez
-Python-порт v1.5.2.
-
-Запуск:
-    python python.py [QUERY] [опции]
-"""
 
 import argparse
 import base64
