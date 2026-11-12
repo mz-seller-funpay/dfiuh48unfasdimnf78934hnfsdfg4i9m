@@ -231,6 +231,11 @@ def http_get(url: str, timeout: int = 30, use_etag: bool = False) -> bytes:
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
+                # 304 может прийти без исключения — проверяем статус вручную
+                status = getattr(resp, "status", None) or resp.getcode()
+                if status == 304 and use_etag and url in _ETAG_CACHE:
+                    dbg(f"http_get 304 Not Modified: {url}")
+                    return _ETAG_CACHE[url][1]
                 data = resp.read()
                 if use_etag:
                     etag = resp.headers.get("ETag")
@@ -239,10 +244,10 @@ def http_get(url: str, timeout: int = 30, use_etag: bool = False) -> bytes:
                 return data
         except urllib.error.HTTPError as e:
             if e.code == 304 and use_etag and url in _ETAG_CACHE:
-                dbg(f"http_get 304 Not Modified: {url}")
+                dbg(f"http_get 304 (HTTPError): {url}")
                 return _ETAG_CACHE[url][1]
             last_err = e
-            dbg(f"http_get HTTP {e.code} attempt {attempt + 1}")
+            dbg(f"http_get HTTP {e.code} attempt {attempt + 1}: {url}")
             if 400 <= e.code < 500 and e.code != 429:
                 raise
             if attempt < HTTP_RETRIES - 1:
@@ -411,22 +416,21 @@ def load_synonyms(use_cache: bool = True) -> dict:
 
 def _validate_script(data: bytes) -> bool:
     text = data.decode("utf-8", "ignore")
-    return (
-        "CURRENT_VERSION" in text
-        and "def check_for_updates" in text
-        and "__version__" in text
-    )
+    return "CURRENT_VERSION" in text and "def check_for_updates" in text
 
 
 def check_for_updates(force: bool = False) -> None:
     try:
-        remote = http_get(VERSION_URL, timeout=10, use_etag=True)
-        remote = remote.decode("utf-8", "ignore").strip()
+        raw = http_get(VERSION_URL, timeout=10, use_etag=True)
+        remote = raw.decode("utf-8", "ignore").strip()
     except Exception as e:
-        dbg(f"version check failed: {e}")
+        print(f"  [!] Не удалось проверить обновления: {e}")
         return
+
     if not remote:
+        print("  [!] Сервер вернул пустую версию — пропускаем проверку.")
         return
+
     if remote == CURRENT_VERSION and not force:
         print(f"  У вас последняя версия ({CURRENT_VERSION}).")
         return
@@ -435,12 +439,7 @@ def check_for_updates(force: bool = False) -> None:
     if remote == CURRENT_VERSION:
         print(f"  Версия не изменилась ({CURRENT_VERSION}). Переустановить?")
     else:
-        print(f"  Доступна новая версия: {remote} (у вас {CURRENT_VERSION})")
-
-    if APP.interactive and not force:
-        print("  Текущая сессия продолжит работу со старой версией.")
-        print("  Перезапустите скрипт вручную, чтобы использовать новую.")
-        return
+        print(f"  Доступна версия: {remote} (у вас {CURRENT_VERSION})")
 
     if not force:
         try:
@@ -568,13 +567,12 @@ def parse_records(text: str) -> list[Record]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Запросы: + (AND), - (NOT), , (OR)
+# Запросы: , (OR), + (AND), - (NOT)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 @dataclass
 class Query:
-    """Разобранный запрос. queries = OR-группы, каждая — список AND-термов."""
     groups: list[list[str]] = field(default_factory=list)
     alts: list[list[str]] = field(default_factory=list)
     excludes: list[str] = field(default_factory=list)
@@ -590,18 +588,9 @@ def _resolve_alt(term: str, synonyms: dict) -> list[str]:
 
 
 def parse_query(raw: str, synonyms: dict) -> Query:
-    """
-    "гта + ведьмак -кс" →
-        groups  = [["гта", "ведьмак"]]
-        alts    = [["grand theft auto", "witcher"]]
-        excludes = ["кс"]
-        excludes_alt = ["cs"]
-    "гта, киберпанк" → две OR-группы.
-    """
     q = Query()
-    # Excludes: -term
     positive_parts = []
-    for chunk in re.split(r"[,]", raw):
+    for chunk in raw.split(","):
         chunk = chunk.strip()
         if not chunk:
             continue
@@ -614,7 +603,6 @@ def parse_query(raw: str, synonyms: dict) -> Query:
                     q.excludes_alt.extend(_resolve_alt(term, synonyms))
             else:
                 terms.append(tok)
-        # склеиваем + AND: "гта + ведьмак" → ["гта", "ведьмак"]
         if "+" in terms:
             parts = [t for t in terms if t != "+"]
         else:
@@ -632,10 +620,8 @@ def parse_query(raw: str, synonyms: dict) -> Query:
 def _query_line_matches(line: str, q: Query) -> bool:
     if not q.groups:
         return False
-    # OR по группам
     matched_group = False
     for terms, alts in zip(q.groups, q.alts):
-        # AND внутри группы
         all_terms = True
         for t in terms:
             if not _match(line, t, wordbound=True):
@@ -644,7 +630,6 @@ def _query_line_matches(line: str, q: Query) -> bool:
         if all_terms:
             matched_group = True
             break
-        # пробуем alt
         all_alts = True
         for a in alts:
             if not _match(line, a, wordbound=False):
@@ -655,7 +640,6 @@ def _query_line_matches(line: str, q: Query) -> bool:
             break
     if not matched_group:
         return False
-    # NOT
     for ex in q.excludes:
         if _match(line, ex, wordbound=True):
             return False
@@ -663,14 +647,6 @@ def _query_line_matches(line: str, q: Query) -> bool:
         if _match(line, ex, wordbound=False):
             return False
     return True
-
-
-def _all_alt_list(q: Query) -> list[str]:
-    out = []
-    for group in q.alts:
-        out.extend(group)
-    out.extend(q.excludes_alt)
-    return out
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -740,13 +716,7 @@ def write_record(rec: Record, q: Query, full: bool = False) -> None:
     out.flush()
 
 
-def search_records(
-    records: list[Record],
-    q: Query,
-    limit: int | None,
-    min_games: int = 0,
-    full: bool = False,
-) -> int:
+def search_records(records, q, limit, min_games=0, full=False) -> int:
     header_written = False
     found = 0
     shown = 0
@@ -787,7 +757,7 @@ def search_records(
     return found
 
 
-def stats_records(records: list[Record], top: int = 10, min_games: int = 0) -> None:
+def stats_records(records, top=10, min_games=0) -> None:
     records = [r for r in records if r.games_count >= min_games]
     total = len(records)
     no_games = sum(1 for r in records if r.games_count == 0)
@@ -816,7 +786,7 @@ def stats_records(records: list[Record], top: int = 10, min_games: int = 0) -> N
         safe_print(f"    {paint('\033[32m', f'{n:>3}')} игр  —  {dist[n]} акк.")
 
 
-def print_filter_info(records: list[Record], min_games: int) -> None:
+def print_filter_info(records, min_games) -> None:
     if min_games <= 0:
         return
     passed = sum(1 for r in records if r.games_count >= min_games)
@@ -1007,7 +977,6 @@ def run_search(raw_query: str, limit: int | None, min_games: int,
             safe_print(paint("\033[96m", f"  Найдено: {len(filtered)}{suffix}"))
         return len(filtered)
 
-    flat = ", ".join(t for g in q.groups for t in g)
     safe_print(f"  Поиск: {raw_query}")
     if q.excludes:
         safe_print(f"  Исключено: {', '.join(q.excludes)}")
@@ -1108,7 +1077,6 @@ def main(argv=None) -> int:
     config_path = Path(args.config) if args.config else default_config_path()
     cfg = read_config(config_path)
 
-    # Конфиг: явные флаги перебивают, иначе — значения из конфига
     no_update = args.no_update if args.no_update is not None else get_bool(cfg, "no_update")
     no_cache_accs = (
         args.no_cache_accs if args.no_cache_accs is not None
